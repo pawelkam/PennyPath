@@ -3,7 +3,7 @@ project: PennyPath
 version: 1
 status: draft
 created: 2026-10-10
-updated: 2026-10-10
+updated: 2026-11-05
 prd_version: 1
 main_goal: speed
 top_blocker: decisions
@@ -45,7 +45,7 @@ Porównanie okresów w S-03 i ustawienie ich początku w S-04 domykają pierwsze
 
 | ID | Change ID | Outcome (user can …) | Prerequisites | PRD refs | Status |
 | --- | --- | --- | --- | --- | --- |
-| F-01 | spending-reconciliation-checks | (foundation) Istnieją minimalne przypadki referencyjne i sposób uruchomienia sprawdzenia zgodności rejestru i podsumowania dla kwot, dat zakupu oraz kategorii i podkategorii. | — | FR-002, FR-004, Business Logic, Non-Functional Requirements | ready |
+| F-01 | spending-reconciliation-checks | (foundation) Istnieją minimalne przypadki referencyjne i sposób uruchomienia sprawdzenia zgodności rejestru i podsumowania dla kwot, dat zakupu oraz kategorii i podkategorii. | — | FR-002, FR-004, Business Logic, Non-Functional Requirements | in-progress |
 | S-01 | private-account-access | Użytkownik może zalogować się adresem email i hasłem w przeglądarce oraz uzyskać dostęp do własnego obszaru, z kontrolą dostępu dla niezalogowanych osób. | — | FR-001, US-01, Access Control, Non-Functional Requirements | blocked |
 | S-02 | first-manual-expense | Użytkownik może dodać wydatek z nazwą, kwotą w PLN, datą zakupu i kategorią/podkategorią z zestawu początkowego, zobaczyć go we własnym rejestrze i odświeżonym podsumowaniu bieżącego okresu. | F-01, S-01 | US-01, FR-001, FR-002, FR-004, FR-006, Business Logic, Non-Functional Requirements | proposed |
 | S-03 | compare-spending-periods | Użytkownik może porównać wydatki bieżącego i poprzedniego okresu według kategorii oraz podkategorii, z sumami zgodnymi z rejestrem. | S-02 | FR-002, US-01, Business Logic, Non-Functional Requirements | proposed |
@@ -100,7 +100,7 @@ PRD nie nadaje identyfikatorów wymaganiom niefunkcjonalnym; odwołania do nich 
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Zgodność sum jest warunkiem dopuszczenia funkcji w PRD. Foundation ustanawia minimalne przypadki referencyjne; S-02 integruje rzeczywisty zapis i agregację, a kolejne przekroje rozszerzają weryfikację przy pierwszym użyciu nowych zachowań.
-- **Status:** ready
+- **Status:** in-progress
 
 ## Slices
 

@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "currency": "PLN",
+  "cases": [
+    {
+      "id": "empty-register",
+      "description": "Pusty rejestr daje zerowy wynik bez grup.",
+      "period": {"start_inclusive": "2026-01-01", "end_exclusive": "2026-02-01"},
+      "expenses": [],
+      "expected": {"expense_ids": [], "total": "0.00", "categories": {}, "subcategories": {}}
+    },
+    {
+      "id": "exact-cents",
+      "description": "Kwoty groszowe sumują się dokładnie na obu poziomach grupowania.",
+      "period": {"start_inclusive": "2026-01-01", "end_exclusive": "2026-02-01"},
+      "expenses": [
+        {"id": "c1", "amount": "0.10", "purchase_date": "2026-01-15", "recorded_date": "2026-01-15", "category_id": "food", "subcategory_id": "groceries"},
+        {"id": "c2", "amount": "0.20", "purchase_date": "2026-01-15", "recorded_date": "2026-01-15", "category_id": "food", "subcategory_id": "groceries"},
+        {"id": "c3", "amount": "0.01", "purchase_date": "2026-01-15", "recorded_date": "2026-01-15", "category_id": "food", "subcategory_id": "drinks"}
+      ],
+      "expected": {
+        "expense_ids": ["c1", "c2", "c3"],
+        "total": "0.31",
+        "categories": {"food": "0.31"},
+        "subcategories": {"food": {"groceries": "0.30", "drinks": "0.01"}}
+      }
+    },
+    {
+      "id": "category-hierarchy",
+      "description": "Podkategoria other pozostaje rozdzielona między food i transport.",
+      "period": {"start_inclusive": "2026-01-01", "end_exclusive": "2026-02-01"},
+      "expenses": [
+        {"id": "h1", "amount": "15.00", "purchase_date": "2026-01-15", "recorded_date": "2026-01-15", "category_id": "food", "subcategory_id": "other"},
+        {"id": "h2", "amount": "20.00", "purchase_date": "2026-01-15", "recorded_date": "2026-01-15", "category_id": "transport", "subcategory_id": "other"},
+        {"id": "h3", "amount": "5.00", "purchase_date": "2026-01-15", "recorded_date": "2026-01-15", "category_id": "food", "subcategory_id": "staples"}
+      ],
+      "expected": {
+        "expense_ids": ["h1", "h2", "h3"],
+        "total": "40.00",
+        "categories": {"food": "20.00", "transport": "20.00"},
+        "subcategories": {"food": {"other": "15.00", "staples": "5.00"}, "transport": {"other": "20.00"}}
+      }
+    },
+    {
+      "id": "purchase-date-boundaries",
+      "description": "Styczeń obejmuje daty zakupu od 1 do 31 stycznia, niezależnie od daty wpisu.",
+      "period": {"start_inclusive": "2026-01-01", "end_exclusive": "2026-02-01"},
+      "expenses": [
+        {"id": "b0", "amount": "99.00", "purchase_date": "2025-12-31", "recorded_date": "2026-01-02", "category_id": "food", "subcategory_id": "groceries"},
+        {"id": "b1", "amount": "10.00", "purchase_date": "2026-01-01", "recorded_date": "2026-02-03", "category_id": "food", "subcategory_id": "groceries"},
+        {"id": "b2", "amount": "20.00", "purchase_date": "2026-01-31", "recorded_date": "2026-02-02", "category_id": "food", "subcategory_id": "groceries"},
+        {"id": "b3", "amount": "88.00", "purchase_date": "2026-02-01", "recorded_date": "2026-02-02", "category_id": "food", "subcategory_id": "groceries"}
+      ],
+      "expected": {
+        "expense_ids": ["b1", "b2"],
+        "total": "30.00",
+        "categories": {"food": "30.00"},
+        "subcategories": {"food": {"groceries": "30.00"}}
+      }
+    },
+    {
+      "id": "calendar-year-boundary",
+      "description": "Okres grudniowy kończy się przed 1 stycznia nowego roku.",
+      "period": {"start_inclusive": "2025-12-01", "end_exclusive": "2026-01-01"},
+      "expenses": [
+        {"id": "y0", "amount": "9.00", "purchase_date": "2025-11-30", "recorded_date": "2025-11-30", "category_id": "food", "subcategory_id": "groceries"},
+        {"id": "y1", "amount": "1.25", "purchase_date": "2025-12-01", "recorded_date": "2025-12-01", "category_id": "food", "subcategory_id": "groceries"},
+        {"id": "y2", "amount": "2.75", "purchase_date": "2025-12-31", "recorded_date": "2025-12-31", "category_id": "food", "subcategory_id": "groceries"},
+        {"id": "y3", "amount": "8.00", "purchase_date": "2026-01-01", "recorded_date": "2026-01-01", "category_id": "food", "subcategory_id": "groceries"}
+      ],
+      "expected": {
+        "expense_ids": ["y1", "y2"],
+        "total": "4.00",
+        "categories": {"food": "4.00"},
+        "subcategories": {"food": {"groceries": "4.00"}}
+      }
+    },
+    {
+      "id": "distinct-register-rows",
+      "description": "Dwa odrębne wpisy o tej samej dacie i kwocie liczą się oba.",
+      "period": {"start_inclusive": "2026-01-01", "end_exclusive": "2026-02-01"},
+      "expenses": [
+        {"id": "r1", "amount": "0.50", "purchase_date": "2026-01-15", "recorded_date": "2026-01-15", "category_id": "food", "subcategory_id": "drinks"},
+        {"id": "r2", "amount": "0.50", "purchase_date": "2026-01-15", "recorded_date": "2026-01-15", "category_id": "food", "subcategory_id": "drinks"}
+      ],
+      "expected": {
+        "expense_ids": ["r1", "r2"],
+        "total": "1.00",
+        "categories": {"food": "1.00"},
+        "subcategories": {"food": {"drinks": "1.00"}}
+      }
+    }
+  ]
+}
