@@ -378,28 +378,28 @@ CA i Data Protection keys wymagają kopii/ochrony jak inne sekrety; prywatny klu
 
 #### Automated
 
-- [x] 1.1 Zależności rozwiązania i lokalne narzędzie EF są przywrócone: `dotnet restore backend/PennyPath.slnx` oraz `dotnet tool restore`.
-- [x] 1.2 Rozwiązanie kompiluje się: `dotnet build backend/PennyPath.slnx --no-restore`.
-- [x] 1.3 Testy trwałości i niezmienników kont przechodzą: `dotnet test backend/PennyPath.Api.Tests/PennyPath.Api.Tests.csproj --no-restore --filter Category=Persistence`.
-- [x] 1.4 Powstaje idempotentny SQL bez połączenia z bazą: `dotnet tool run dotnet-ef migrations script --idempotent --project backend/PennyPath.Api --output artifacts/private-account-access.sql`.
-- [x] 1.5 Zmiany nie zawierają błędów whitespace: `git diff --check`.
+- [x] 1.1 Zależności rozwiązania i lokalne narzędzie EF są przywrócone: `dotnet restore backend/PennyPath.slnx` oraz `dotnet tool restore`. — f4c0ad2
+- [x] 1.2 Rozwiązanie kompiluje się: `dotnet build backend/PennyPath.slnx --no-restore`. — f4c0ad2
+- [x] 1.3 Testy trwałości i niezmienników kont przechodzą: `dotnet test backend/PennyPath.Api.Tests/PennyPath.Api.Tests.csproj --no-restore --filter Category=Persistence`. — f4c0ad2
+- [x] 1.4 Powstaje idempotentny SQL bez połączenia z bazą: `dotnet tool run dotnet-ef migrations script --idempotent --project backend/PennyPath.Api --output artifacts/private-account-access.sql`. — f4c0ad2
+- [x] 1.5 Zmiany nie zawierają błędów whitespace: `git diff --check`. — f4c0ad2
 
 #### Manual
 
-- [x] 1.6 Użytkownik potwierdził, że wygenerowana migracja dodaje tabele Identity i unikalny indeks emaila oraz nie zmienia istniejących danych.
+- [x] 1.6 Użytkownik potwierdził, że wygenerowana migracja dodaje tabele Identity i unikalny indeks emaila oraz nie zmienia istniejących danych. — f4c0ad2
 
 ### Phase 2: API logowania i sesji
 
 #### Automated
 
-- [ ] 2.1 Testy HTTP, CSRF i maksymalnego czasu sesji przechodzą: `dotnet test backend/PennyPath.Api.Tests/PennyPath.Api.Tests.csproj --filter Category=Auth`.
-- [ ] 2.2 Cały zestaw testów backendu przechodzi: `dotnet test backend/PennyPath.slnx`.
-- [ ] 2.3 Przykłady HTTP i kod przechodzą kompilację: `dotnet build backend/PennyPath.slnx --no-restore`.
-- [ ] 2.4 Zmiany nie zawierają błędów whitespace: `git diff --check`.
+- [x] 2.1 Testy HTTP, CSRF i maksymalnego czasu sesji przechodzą: `dotnet test backend/PennyPath.Api.Tests/PennyPath.Api.Tests.csproj --filter Category=Auth`.
+- [x] 2.2 Cały zestaw testów backendu przechodzi: `dotnet test backend/PennyPath.slnx`.
+- [x] 2.3 Przykłady HTTP i kod przechodzą kompilację: `dotnet build backend/PennyPath.slnx --no-restore`.
+- [x] 2.4 Zmiany nie zawierają błędów whitespace: `git diff --check`.
 
 #### Manual
 
-- [ ] 2.5 Użytkownik potwierdził kontrakt rejestracja → osobne logowanie, prywatny odczyt bieżącego użytkownika i maksymalnie 7-dniową sesję bez jej automatycznego przedłużania.
+- [x] 2.5 Użytkownik potwierdził kontrakt rejestracja → osobne logowanie, prywatny odczyt bieżącego użytkownika i maksymalnie 7-dniową sesję bez jej automatycznego przedłużania.
 
 ### Phase 3: Przepływ w Vue
 

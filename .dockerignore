@@ -20,3 +20,5 @@
 !backend/PennyPath.Api/Controllers/**
 !backend/PennyPath.Api/Data/
 !backend/PennyPath.Api/Data/**
+!backend/PennyPath.Api/Auth/
+!backend/PennyPath.Api/Auth/**

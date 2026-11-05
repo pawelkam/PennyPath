@@ -1,4 +1,7 @@
-@PennyPath.Api_HostAddress = http://localhost:0
+@PennyPath.Api_HostAddress = https://localhost:0
+# Replace port 0 with the HTTPS URL printed by the https launch profile.
+# Use a trusted development certificate and a client that retains cookies.
+# Sample credentials below are synthetic. Never commit real passwords or tokens.
 
 GET {{PennyPath.Api_HostAddress}}/weatherforecast/
 Accept: application/json
@@ -12,5 +15,47 @@ Accept: application/json
 
 GET {{PennyPath.Api_HostAddress}}/api/does-not-exist
 Accept: application/json
+
+###
+
+# @name anonymousCsrf
+GET {{PennyPath.Api_HostAddress}}/api/auth/csrf
+
+###
+
+POST {{PennyPath.Api_HostAddress}}/api/auth/register
+Content-Type: application/json
+X-CSRF-TOKEN: {{anonymousCsrf.response.body.$.requestToken}}
+
+{"email":"example@example.test","password":"reference passphrase"}
+
+###
+
+# Registration creates no session. Login separately with the anonymous token.
+POST {{PennyPath.Api_HostAddress}}/api/auth/login
+Content-Type: application/json
+X-CSRF-TOKEN: {{anonymousCsrf.response.body.$.requestToken}}
+
+{"email":"example@example.test","password":"reference passphrase"}
+
+###
+
+GET {{PennyPath.Api_HostAddress}}/api/auth/me
+
+###
+
+# Fetch a new request token after the identity changes at login.
+# @name authenticatedCsrf
+GET {{PennyPath.Api_HostAddress}}/api/auth/csrf
+
+###
+
+POST {{PennyPath.Api_HostAddress}}/api/auth/logout
+X-CSRF-TOKEN: {{authenticatedCsrf.response.body.$.requestToken}}
+
+###
+
+# Expected 401 after logout; discard the old request token too.
+GET {{PennyPath.Api_HostAddress}}/api/auth/me
 
 ###

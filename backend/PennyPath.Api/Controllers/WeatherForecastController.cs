@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 
 namespace PennyPath.Api.Controllers;
 
 [ApiController]
+[AllowAnonymous]
 [Route("[controller]")]
 public class WeatherForecastController : ControllerBase
 {
