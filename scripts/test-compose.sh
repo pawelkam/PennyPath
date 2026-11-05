@@ -71,7 +71,7 @@ app_container=$(compose ps -q app)
 [ "$(docker exec "$app_container" id -u)" != 0 ]
 docker exec "$app_container" sh -c 'test -r /run/secrets/postgres_password && cat /run/secrets/postgres_password >/dev/null'
 compose run --rm --no-deps --entrypoint sh app -c \
-    'test "$(id -u)" != 0 && test -r /run/secrets/postgres_password && cat /run/secrets/postgres_password >/dev/null'
+    "test \"\$(id -u)\" != 0 && test -r /run/secrets/postgres_password && cat /run/secrets/postgres_password >/dev/null"
 
 # Keep a sentinel through a database recreation and an app deployment.
 compose exec -T postgres psql -U pennypath -d pennypath -v ON_ERROR_STOP=1 \
