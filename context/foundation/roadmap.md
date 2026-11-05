@@ -45,7 +45,7 @@ Porównanie okresów w S-03 i ustawienie ich początku w S-04 domykają pierwsze
 
 | ID | Change ID | Outcome (user can …) | Prerequisites | PRD refs | Status |
 | --- | --- | --- | --- | --- | --- |
-| F-01 | spending-reconciliation-checks | (foundation) Istnieją minimalne przypadki referencyjne i sposób uruchomienia sprawdzenia zgodności rejestru i podsumowania dla kwot, dat zakupu oraz kategorii i podkategorii. | — | FR-002, FR-004, Business Logic, Non-Functional Requirements | in-progress |
+| F-01 | spending-reconciliation-checks | (foundation) Istnieją minimalne przypadki referencyjne i sposób uruchomienia sprawdzenia zgodności rejestru i podsumowania dla kwot, dat zakupu oraz kategorii i podkategorii. | — | FR-002, FR-004, Business Logic, Non-Functional Requirements | done |
 | S-01 | private-account-access | Użytkownik może zalogować się adresem email i hasłem w przeglądarce oraz uzyskać dostęp do własnego obszaru, z kontrolą dostępu dla niezalogowanych osób. | — | FR-001, US-01, Access Control, Non-Functional Requirements | blocked |
 | S-02 | first-manual-expense | Użytkownik może dodać wydatek z nazwą, kwotą w PLN, datą zakupu i kategorią/podkategorią z zestawu początkowego, zobaczyć go we własnym rejestrze i odświeżonym podsumowaniu bieżącego okresu. | F-01, S-01 | US-01, FR-001, FR-002, FR-004, FR-006, Business Logic, Non-Functional Requirements | proposed |
 | S-03 | compare-spending-periods | Użytkownik może porównać wydatki bieżącego i poprzedniego okresu według kategorii oraz podkategorii, z sumami zgodnymi z rejestrem. | S-02 | FR-002, US-01, Business Logic, Non-Functional Requirements | proposed |
@@ -100,7 +100,8 @@ PRD nie nadaje identyfikatorów wymaganiom niefunkcjonalnym; odwołania do nich 
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** Zgodność sum jest warunkiem dopuszczenia funkcji w PRD. Foundation ustanawia minimalne przypadki referencyjne; S-02 integruje rzeczywisty zapis i agregację, a kolejne przekroje rozszerzają weryfikację przy pierwszym użyciu nowych zachowań.
-- **Status:** in-progress
+- **Scope decision (2026-11-05):** Zakres F-01 na MVP zamyka ukończona i odebrana faza 1 (`75de4f3`). Dawna faza 2 — podłączenie kontroli do CI i rozszerzona dokumentacja przekazania — została odłożona poza MVP do Parked. Integracja rzeczywistego zapisu i agregacji w S-02 pozostaje w MVP.
+- **Status:** done
 
 ## Slices
 
@@ -257,7 +258,7 @@ Pole „Parallel with” wymienia elementy bez zależności między nimi w żadn
 
 | Roadmap ID | Change ID | Suggested issue title | Ready for `/10x-plan` | Notes |
 | --- | --- | --- | --- | --- |
-| F-01 | spending-reconciliation-checks | Sprawdzalna zgodność rejestru i podsumowania | yes | `/10x-plan spending-reconciliation-checks` — odblokowuje weryfikację S-02 |
+| F-01 | spending-reconciliation-checks | Sprawdzalna zgodność rejestru i podsumowania | no | Zakres MVP ukończony w `75de4f3`; CI i rozszerzona dokumentacja przekazania odłożone do Parked |
 | S-01 | private-account-access | Dostęp do własnego konta | no | Rozstrzygnij pytanie 4 o dostęp do konta |
 | S-02 | first-manual-expense | Pierwszy ręczny wydatek i aktualne podsumowanie | no | Najpierw ukończ: F-01, S-01 |
 | S-03 | compare-spending-periods | Porównanie wydatków między okresami | no | Najpierw ukończ: S-02 |
@@ -284,6 +285,7 @@ Pytania PRD poniżej zachowano dosłownie; dopisane pola Block wskazują ich wp�
 
 ## Parked
 
+- **Automatyzacja kontroli zgodności w CI i rozszerzona dokumentacja przekazania (dawna faza 2 F-01)** — Why parked: decyzja użytkownika z 2026-11-05, realizacja po MVP. Zakres: obie komendy kontroli w `verify` przed budowaniem obrazu, komendy i link w głównym README oraz przykład błędu i szczegółowa instrukcja użycia danych w testach .NET. Szczegóły: `context/changes/spending-reconciliation-checks/plan.md`, Deferred After MVP; pierwotny kontrakt w commicie `75de4f3`. Nie blokuje zamknięcia M-1 ani integracji zgodności w S-02.
 - **Kategoryzacja wspomagana AI i odczyt paragonów, zdjęć oraz PDF** — Why parked: PRD §Non-Goals odkłada je na później; MVP korzysta z ręcznej kategoryzacji.
 - **Natywne aplikacje iOS i Android** — Why parked: PRD §Non-Goals określa MVP jako produkt przeglądarkowy.
 - **Dedykowane budżety i prognozy oszczędności** — Why parked: PRD §Non-Goals pozostawia planowanie oszczędności użytkownikowi na podstawie zestawień.
@@ -296,3 +298,5 @@ Pytania PRD poniżej zachowano dosłownie; dopisane pola Block wskazują ich wp�
 ## Milestone History
 
 ## Done
+
+- **F-01 — spending-reconciliation-checks** (2026-11-05, `75de4f3`): sześć przypadków JSON, lokalna kontrola zgodności, 22 testy i opis danych; ręczna weryfikacja potwierdzona. Dawna faza 2 przeniesiona poza MVP do Parked.

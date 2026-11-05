@@ -5,7 +5,8 @@
 ## What & Why
 
 F-01 ustanawia sprawdzalny wzorzec zgodności rejestru i podsumowania dla kwot PLN, dat zakupu oraz kategorii i podkategorii.
-Użytkownik wybrał wariant referencyjny i zatwierdził dwie fazy. Wspólne przykłady pomogą później weryfikować funkcję aplikacji w S-02.
+Użytkownik wybrał wariant referencyjny. Po ukończeniu fazy 1 w `75de4f3` przeniósł dawną fazę 2 poza MVP (2026-11-05).
+Wspólne przykłady pomogą weryfikować funkcję aplikacji w S-02 w ramach MVP.
 
 ## Starting Point
 
@@ -15,7 +16,8 @@ Wykorzystujemy obecny wzorzec skryptów Python; nie trzeba dodawać projektu .NE
 ## Desired End State
 
 Jedno polecenie sprawdza sześć przypadków JSON i wskazuje rozbieżności kwot, dat i przypisań.
-Kontrola i jej testy działają lokalnie oraz w CI przed budowaniem obrazu. S-02 może wykorzystać te same dane i oczekiwania w testach .NET.
+Kontrola i jej testy działają lokalnie. S-02 może wykorzystać te same dane i oczekiwania w testach .NET.
+Podłączenie do CI i rozszerzona dokumentacja przekazania zostały odłożone po MVP.
 Zielony wynik F-01 potwierdza spójność wzorca; rzeczywista funkcja aplikacji wymaga osobnych testów integracyjnych w S-02.
 
 ## Key Decisions Made
@@ -23,7 +25,7 @@ Zielony wynik F-01 potwierdza spójność wzorca; rzeczywista funkcja aplikacji 
 | Decision | Choice | Why |
 | --- | --- | --- |
 | Zakres | Wariant referencyjny, potwierdzony przez użytkownika | Rzeczywisty zapis i agregacja są integrowane w S-02 |
-| Podział | Dwie fazy zatwierdzone przez użytkownika | Najpierw wykonywalny wzorzec, potem podłączenie do CI i przekazanie |
+| Zakres MVP | Ukończona faza 1; dawna faza 2 poza MVP | Decyzja użytkownika z 2026-11-05 ogranicza bieżącą zmianę do lokalnego wzorca |
 | Format | JSON version 1, jawne oczekiwane IDs i sumy | Te same przykłady mogą służyć Pythonowi i .NET |
 | Narzędzie | Python 3.9+, standardowe `unittest` i `Decimal` | Pasuje do obecnych skryptów; nie wymaga instalowania pakietów |
 | Kwoty | Tekst z dwoma miejscami dziesiętnymi, np. `"0.10"` | Dokładne porównania bez `float` i tolerancji |
@@ -32,9 +34,10 @@ Zielony wynik F-01 potwierdza spójność wzorca; rzeczywista funkcja aplikacji 
 
 ## Scope
 
-**In scope:** sześć stałych przypadków, dokumentacja formatu, kontrola CLI, testy wykrywania rozbieżności i błędnego wejścia, krok `verify`, instrukcja dla S-02.
+**In scope:** sześć stałych przypadków, dokumentacja formatu, kontrola CLI, testy wykrywania rozbieżności i błędnego wejścia.
 
 **Out of scope:** kod produkcyjny agregacji, API/UI/baza/auth, obliczanie okresów z konfiguracji, edycja/usuwanie/podziały zakupów, CSV i wdrożenie.
+**Po MVP:** obie komendy w `verify`, rozszerzenie głównego README, przykład błędu i szczegółowa instrukcja przekazania danych do testów .NET; zapisane w Parked roadmapy.
 Przykłady obejmują dodatnie kwoty i pełne przypisania; nie ustalają zasad zwrotów, zaokrąglania ani nieprzypisanych kategorii.
 
 ## Architecture / Approach
@@ -49,10 +52,10 @@ Przypadki: pusty rejestr; grosze `0.10 + 0.20 + 0.01 = 0.31`; hierarchia z `othe
 | Phase | What it delivers | Key risk |
 | --- | --- | --- |
 | 1. Przypadki referencyjne i wykonywalna kontrola | JSON, opis danych, skrypt i testy | Pozorna zgodność sum ogólnych; sprawdzamy też IDs i oba poziomy hierarchii |
-| 2. CI i przekazanie do S-02 | Obie komendy w `verify` i instrukcja użycia | Zielony F-01 nie zastępuje testu rzeczywistej aplikacji |
 
-**Prerequisites:** Python 3.9+, checkout repozytorium; do późniejszego uruchomienia workflow dostęp do GitHub. Bez wymogu Dockera dla nowych kontroli.
-**Estimated effort:** orientacyjnie jedna sesja na fazę, łącznie około 3–5 godzin z weryfikacją i odbiorem; to nie gwarancja terminu.
+**Status:** faza 1 ukończona i odebrana, commit `75de4f3`; aktywny zakres F-01 na MVP zamknięty.
+**Prerequisites:** Python 3.9+ i checkout repozytorium; bez wymogu Dockera dla nowych kontroli.
+**Estimated effort:** aktywna faza już ukończona; prace po MVP wymagają osobnej zmiany i oszacowania.
 
 ## Open Risks & Assumptions
 
@@ -60,12 +63,13 @@ Przypadki: pusty rejestr; grosze `0.10 + 0.20 + 0.01 = 0.31`; hierarchia z `othe
 - Zestaw jest syntetyczny; kolejne przekroje rozszerzą go przy pierwszym użyciu nowych zachowań.
 - Lokalny Python ma wersję 3.9.6. `actionlint` nie jest dostępny; plan nie wymaga go jako lokalnej bramki.
 - Historyczny Baseline roadmapy jest starszy od wdrożenia; plan opiera się na istniejących plikach CI.
+- Kontrolę referencyjną trzeba uruchamiać lokalnie do czasu podłączenia jej do CI po MVP. S-02 nadal weryfikuje rzeczywistą funkcję aplikacji w MVP.
 
 ## Success Criteria (Summary)
 
 - Sześć przypadków przechodzi; testy wykrywają błędy kwoty, daty i hierarchii, także przy niezmienionej sumie ogólnej.
-- Te same komendy działają lokalnie i są wywoływane przed budowaniem obrazu w CI.
-- Użytkownik potwierdza wyliczenia oraz czytelność przekazania; wszystkie kroki wykonania pozostają początkowo niezaznaczone w `plan.md`.
+- Obie komendy działają lokalnie; podłączenie do CI pozostaje w backlogu po MVP.
+- Użytkownik potwierdził wyliczenia; cztery pozycje fazy 1 w `Progress` są ukończone i wskazują commit `75de4f3`.
 
 ## References
 

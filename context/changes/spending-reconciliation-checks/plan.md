@@ -2,7 +2,7 @@
 
 ## Overview
 
-F-01 ustanawia minimalny, wykonywalny wzorzec zgodności rejestru i podsumowania: syntetyczne dane JSON, niezależnie ustalone oczekiwane wyniki oraz kontrolę kwot, dat zakupu, kategorii i podkategorii. Użytkownik zatwierdził wariant referencyjny, złożoność LOW i dwie fazy. Wynik będzie podstawą dla integracji rzeczywistego zapisu i agregacji w S-02.
+F-01 ustanawia minimalny, wykonywalny wzorzec zgodności rejestru i podsumowania: syntetyczne dane JSON, niezależnie ustalone oczekiwane wyniki oraz kontrolę kwot, dat zakupu, kategorii i podkategorii. Użytkownik zatwierdził wariant referencyjny i złożoność LOW. Dnia 2026-11-05, po ukończeniu fazy 1 w commicie `75de4f3`, przeniósł dawną fazę 2 poza MVP. Aktywny zakres tej zmiany obejmuje wyłącznie ukończoną fazę 1. Wynik będzie podstawą dla integracji rzeczywistego zapisu i agregacji w S-02.
 
 ## Current State Analysis
 
@@ -11,14 +11,14 @@ F-01 ustanawia minimalny, wykonywalny wzorzec zgodności rejestru i podsumowania
 - `.github/workflows/containers.yml:19` ma zadanie `verify`: testy wdrożeniowe, budowanie ARM64 i testy Compose. `publish` zależy od niego (`:44`). Jest już miejsce na szybką kontrolę referencyjną przed budowaniem obrazu.
 - `README.md:20` opisuje lokalne sprawdzenia. `Dockerfile:11` kopiuje tylko projekt API; wariant referencyjny nie wymaga zmiany budowania obrazu ani dodawania projektu .NET.
 - PRD ustala PLN, przypisanie według daty zakupu i zgodność sum kategorii/podkategorii. Roadmapa F-01 oddziela wzorzec referencyjny od integracji w S-02. Jej historyczny Baseline nie uwzględnia istniejącego obecnie CI i wdrożenia; plan opiera się na faktycznych plikach.
-- W folderze zmiany istnieje `change.md` ze statusem `new`. Brak `frame.md`, `research.md`, `context/foundation/lessons.md` i `docs/reference/contract-surfaces.md`; nie są wymagane do tej zmiany.
+- Przy rozpoczęciu planowania w folderze zmiany istniał `change.md` ze statusem `new`. Brak `frame.md`, `research.md`, `context/foundation/lessons.md` i `docs/reference/contract-surfaces.md`; nie są wymagane do tej zmiany.
 - Lokalnie dostępny jest Python 3.9.6. Narzędzie `actionlint` nie jest dostępne, więc nie jest lokalną bramką tego planu.
 
 ## Desired End State
 
 Z katalogu głównego repozytorium można uruchomić `python3 scripts/check-spending-reconciliation.py` i otrzymać wynik każdego z sześciu przypadków. Sukces oznacza zgodność danych referencyjnych z jawnie zapisanymi oczekiwaniami; rozbieżność daje niezerowy kod wyjścia i wskazuje przypadek oraz pole. Testy wykazują wykrywanie błędnej sumy, granicy dat i przypisania również wtedy, gdy suma ogólna nadal się zgadza.
 
-Te same polecenia działają w `verify` przed budowaniem obrazu. JSON i instrukcja pozwalają S-02 wykorzystać ten sam zestaw oczekiwań w testach rzeczywistego zapisu i agregacji .NET. Zielony F-01 potwierdza spójność wzorca, a nie gotowość nieistniejącej jeszcze funkcji aplikacji.
+JSON i opis formatu pozwalają S-02 wykorzystać ten sam zestaw oczekiwań w testach rzeczywistego zapisu i agregacji .NET. Kontrola jest uruchamiana lokalnie; podłączenie jej do `verify` i rozszerzenie instrukcji przekazania odłożono poza MVP. Zielony F-01 potwierdza spójność wzorca, a nie gotowość nieistniejącej jeszcze funkcji aplikacji.
 
 ### Key Discoveries:
 
@@ -36,6 +36,17 @@ Te same polecenia działają w `verify` przed budowaniem obrazu. JSON i instrukc
 - Decyzje produktowe o zwrotach, kwotach ujemnych/zerowych, zaokrąglaniu nadmiarowych miejsc dziesiętnych i nieprzypisanych kategoriach. Przykłady obejmują poprawne dodatnie kwoty PLN i pełne przypisania; kontrola formatu fixture nie staje się walidacją formularza produktu.
 - Projekt ogólnego silnika reguł, generator oczekiwanych wyników, dodatkowe zależności Python, próg pokrycia, benchmarki, publikacja obrazu i wdrożenie.
 - Aktualizacja historycznego Baseline roadmapy poza synchronizacją statusu F-01.
+- Dawna faza 2: automatyczne uruchamianie nowych kontroli w CI oraz rozszerzona dokumentacja w głównym README i instrukcji przekazania — przeniesione poza MVP decyzją użytkownika z 2026-11-05.
+
+## Deferred After MVP
+
+Dawna faza 2 „CI i przekazanie do S-02” została usunięta z aktywnego zakresu i `Progress`. Zakres do podjęcia po MVP zapisano również w `context/foundation/roadmap.md`, sekcja Parked:
+
+- Dodać w `.github/workflows/containers.yml` do zadania `verify`, po checkout i przed budowaniem obrazu, obie komendy: `python3 scripts/check-spending-reconciliation.py` i `python3 scripts/test-spending-reconciliation.py -v`, z zachowaniem propagacji błędów i zależności `publish: needs: verify`.
+- Rozszerzyć główny `README.md` o obie komendy, Python 3.9+ i link do danych. Uzupełnić `tests/fixtures/spending-reconciliation/README.md` o przykład błędu na kopii pliku i szczegółową instrukcję ponownego wykorzystania JSON w testach .NET.
+- Przy podjęciu prac utworzyć osobną zmianę i plan zgodny z aktualnym CI. Źródłowy kontrakt i kryteria dawnej fazy 2 są zachowane w historii Git w commicie `75de4f3`.
+
+Odłożenie dotyczy automatyzacji i rozszerzonej dokumentacji. S-02 nadal integruje rzeczywisty zapis i agregację oraz weryfikuje zgodność z rejestrem w ramach MVP.
 
 ## Implementation Approach
 
@@ -116,47 +127,6 @@ Utworzyć sześć przypadków i kontrolę, która oblicza ich wkład według dat
 
 ---
 
-## Phase 2: CI i przekazanie do S-02
-
-### Overview
-
-Włączyć ten sam wzorzec do istniejącej weryfikacji repozytorium i opisać sposób jego przyszłego zastosowania do rzeczywistej funkcji aplikacji.
-
-### Changes Required:
-
-#### 1. Kontrola w istniejącym workflow
-
-**File**: `.github/workflows/containers.yml`
-
-**Intent**: Wykrywać uszkodzenie wzorca przed kosztownym budowaniem i publikacją obrazu.
-
-**Contract**: W zadaniu `verify`, po checkout i przed krokiem budowania obrazu, jawny krok uruchamia kolejno `python3 scripts/check-spending-reconciliation.py` i `python3 scripts/test-spending-reconciliation.py -v`. Nie używa `continue-on-error`, maskowania kodów ani zależności sieciowych. Zachowuje istniejące testy wdrożeniowe, Compose, zależność `publish: needs: verify`, uprawnienia i warunki wdrażania. Python jest już używany na tym runnerze; brak nowej akcji setup lub zmiany Dockerfile.
-
-#### 2. Lokalna instrukcja i przekazanie
-
-**Files**: `README.md`, `tests/fixtures/spending-reconciliation/README.md`
-
-**Intent**: Umożliwić samodzielne uruchomienie oraz zapobiec traktowaniu referencyjnej kontroli jako dowodu poprawności przyszłej aplikacji.
-
-**Contract**: Główny README dodaje obie komendy z katalogu repozytorium, wymaganie Python 3.9+ i link do opisu danych. README zestawu opisuje kody wyjścia, przykład błędu na kopii pliku i ścieżkę przekazania: S-02 wczytuje te same wejścia i jawne oczekiwania w testach .NET, podstawia rzeczywisty zapis/agregację, zachowuje porównanie IDs i obu poziomów grupowania. Kod produkcyjny nie wywołuje skryptu Python. S-03–S-07 i kolejne zmiany rozszerzają zestaw przy wdrażaniu nowych zachowań.
-
-### Success Criteria:
-
-#### Automated Verification:
-
-- Polecenie używane przez CI potwierdza zestaw: `python3 scripts/check-spending-reconciliation.py`.
-- Polecenie używane przez CI potwierdza testy kontroli: `python3 scripts/test-spending-reconciliation.py -v`.
-- Dotychczasowe testy transakcji wdrożeniowej przechodzą: `python3 scripts/test-deploy.py`.
-- Zmiany workflow i dokumentacji nie zawierają błędów whitespace: `git diff --check`.
-
-#### Manual Verification:
-
-- Użytkownik potwierdził obecność obu komend w `verify` przed budowaniem obrazu, zachowaną zależność publikacji oraz czytelną instrukcję przekazania do S-02 z ograniczeniem gwarancji F-01.
-
-**Implementation Note**: Po automatycznej weryfikacji zatrzymać się na potwierdzenie ręcznej kontroli. W tej fazie nie zmienia się testów ani ich zachowania; nie trzeba ponawiać kontroli celowego zepsucia z fazy 1.
-
----
-
 ## Testing Strategy
 
 ### Unit Tests:
@@ -168,14 +138,13 @@ Włączyć ten sam wzorzec do istniejącej weryfikacji repozytorium i opisać sp
 ### Integration Tests:
 
 - Testy procesu CLI uruchamiają faktyczny skrypt z plikiem domyślnym i plikami tymczasowymi; sprawdzają status procesu i przydatną diagnostykę.
-- Faza 2 podłącza dokładnie te same komendy do CI. Testy wdrożeniowe pozostają osobnym sprawdzeniem infrastruktury.
+- Testy referencyjne są uruchamiane lokalnie. Podłączenie tych samych komend do CI jest pracą po MVP. Testy wdrożeniowe pozostają osobnym sprawdzeniem infrastruktury.
 - Integracja HTTP, bazy i rzeczywistego dashboardu jest poza F-01. Uruchomienie całego workflow w GitHub po publikacji zmiany jest późniejszym potwierdzeniem środowiska CI, a nie wynikiem lokalnych testów.
 
 ### Manual Testing Steps:
 
 1. Po fazie 1 porównać dane JSON z tabelą sześciu przypadków i ręcznie potwierdzić wskazane kwoty i granice okresów.
-2. Po fazie 2 sprawdzić umieszczenie obu komend przed budowaniem obrazu oraz brak omijania błędów i brak zmiany zależności publikacji.
-3. Przeczytać instrukcję jak osoba rozpoczynająca S-02: musi rozróżniać spójność wzorca od testu rzeczywistej funkcji.
+2. Przeczytać opis danych jak osoba rozpoczynająca S-02: musi rozróżniać spójność wzorca od testu rzeczywistej funkcji.
 
 ## Performance Considerations
 
@@ -183,7 +152,7 @@ Stały zestaw sześciu małych przypadków działa w pamięci i nie uruchamia ap
 
 ## Migration Notes
 
-Brak migracji i zmian danych aplikacji. Dodawane są wyłącznie syntetyczne pliki referencyjne, narzędzie, jego testy oraz wpis w istniejącym CI. Format `schema_version: 1` dotyczy danych testowych, nie publicznego API ani schematu bazy. Wycofanie polega na cofnięciu plików i kroku workflow; nie wymaga operacji na PostgreSQL.
+Brak migracji i zmian danych aplikacji. Dodawane są wyłącznie syntetyczne pliki referencyjne, narzędzie, jego testy i opis danych. Format `schema_version: 1` dotyczy danych testowych, nie publicznego API ani schematu bazy. Wycofanie polega na cofnięciu tych plików; nie wymaga operacji na PostgreSQL. Krok workflow pozostaje pracą po MVP.
 
 ## References
 
@@ -201,23 +170,10 @@ Brak migracji i zmian danych aplikacji. Dodawane są wyłącznie syntetyczne pli
 
 #### Automated
 
-- [x] 1.1 Kontrola potwierdza wszystkie sześć przypadków: `python3 scripts/check-spending-reconciliation.py`.
-- [x] 1.2 Testy kontroli i wykrywania rozbieżności przechodzą: `python3 scripts/test-spending-reconciliation.py -v`.
-- [x] 1.3 Zmiany nie zawierają błędów whitespace: `git diff --check`.
+- [x] 1.1 Kontrola potwierdza wszystkie sześć przypadków: `python3 scripts/check-spending-reconciliation.py`. — 75de4f3
+- [x] 1.2 Testy kontroli i wykrywania rozbieżności przechodzą: `python3 scripts/test-spending-reconciliation.py -v`. — 75de4f3
+- [x] 1.3 Zmiany nie zawierają błędów whitespace: `git diff --check`. — 75de4f3
 
 #### Manual
 
-- [x] 1.4 Użytkownik potwierdził ręczne wyliczenie sześciu przypadków z tabeli, w tym `0.31`, rozdzielenie obu podkategorii `other` oraz wyłącznie `b1,b2` w styczniu.
-
-### Phase 2: CI i przekazanie do S-02
-
-#### Automated
-
-- [ ] 2.1 Polecenie używane przez CI potwierdza zestaw: `python3 scripts/check-spending-reconciliation.py`.
-- [ ] 2.2 Polecenie używane przez CI potwierdza testy kontroli: `python3 scripts/test-spending-reconciliation.py -v`.
-- [ ] 2.3 Dotychczasowe testy transakcji wdrożeniowej przechodzą: `python3 scripts/test-deploy.py`.
-- [ ] 2.4 Zmiany workflow i dokumentacji nie zawierają błędów whitespace: `git diff --check`.
-
-#### Manual
-
-- [ ] 2.5 Użytkownik potwierdził obecność obu komend w `verify` przed budowaniem obrazu, zachowaną zależność publikacji oraz czytelną instrukcję przekazania do S-02 z ograniczeniem gwarancji F-01.
+- [x] 1.4 Użytkownik potwierdził ręczne wyliczenie sześciu przypadków z tabeli, w tym `0.31`, rozdzielenie obu podkategorii `other` oraz wyłącznie `b1,b2` w styczniu. — 75de4f3

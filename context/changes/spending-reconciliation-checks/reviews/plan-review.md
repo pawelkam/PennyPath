@@ -9,6 +9,8 @@
 - **Findings**: 0 critical, 0 warnings, 0 observations
 - **Source revision**: HEAD `15a6e62` oraz lokalne, niezatwierdzone artefakty planowania.
 
+> Aktualizacja zakresu po przeglądzie (2026-11-05): raport dokumentuje pierwotny plan dwóch faz. Po ukończeniu fazy 1 w `75de4f3` użytkownik przeniósł fazę 2 poza MVP. Aktywny plan zawiera teraz tylko ukończoną fazę 1; pierwotne ustalenia przeglądu zachowano jako historię. Ta adnotacja nie stanowi nowego przeglądu planu.
+
 ## Verdicts
 
 | Dimension | Verdict |
