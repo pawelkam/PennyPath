@@ -40,3 +40,27 @@ npm run dev
 ```sh
 npm run build
 ```
+
+## Konto i lokalny HTTPS
+
+`npm run test:unit -- --run` uruchamia testy formularzy, sesji i routingu.
+`npm run type-check` sprawdza także testy. API używa względnego `/api/auth/*`
+i cookie tego samego originu. Stan konta i token CSRF pozostają w pamięci.
+
+Formularze wysyłają hasła wyłącznie z originu HTTPS. Zwykłe `npm run dev`
+pozwala obejrzeć interfejs i komunikat wymagania HTTPS, ale nie wysyła haseł.
+Do pracy z API skopiuj `.env.example` do `.env.local` i ustaw jawny
+`DEV_API_TARGET=https://localhost:<port-z-logu-API>` oraz parę plików
+`DEV_HTTPS_CERT`/`DEV_HTTPS_KEY` z lokalnie zaufanym certyfikatem dla hosta Vite.
+Uruchom API jego profilem `https`, a Vite przez `npm run dev`.
+Zaufaj CA w przeglądarce i w Node (`NODE_EXTRA_CA_CERTS`, gdy potrzebne).
+Proxy zachowuje sprawdzanie certyfikatu TLS; prywatne klucze nie trafiają do repo.
+Opcje `DEV_*` są czytane przez konfigurację serwera, nie przez kod klienta.
+
+Alternatywnie zbuduj Vue przez `npm run build`, skopiuj zawartość `dist/`
+do `backend/PennyPath.Api/wwwroot/` i uruchom z katalogu głównego
+`dotnet run --project backend/PennyPath.Api --launch-profile https`.
+Otwórz adres HTTPS wypisany przez API z zaufanym certyfikatem deweloperskim.
+Frontend i API mają wtedy wspólny origin bez proxy. Konto wymaga przygotowanej
+bazy i migracji z wcześniejszych faz; końcowe HTTPS/PostgreSQL w LAN oraz
+trwałość sesji na serwerze są odbierane w fazie 4.

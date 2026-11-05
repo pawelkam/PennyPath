@@ -7,6 +7,7 @@
 !frontend/env.d.ts
 !frontend/tsconfig*.json
 !frontend/vite.config.ts
+!frontend/vitest.config.ts
 !frontend/src/
 !frontend/src/**
 !frontend/public/
