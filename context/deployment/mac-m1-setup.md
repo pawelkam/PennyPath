@@ -191,9 +191,9 @@ Widoczność pakietu jest osobnym ustawieniem od widoczności repozytorium. Nowy
 **Miejsce: Mac-serwer, konto z kroku 1.**
 
 ```sh
-mkdir -p "$HOME/pennypath"
-git clone --branch main https://github.com/pawelkam/PennyPath.git "$HOME/pennypath/repo"
-cd "$HOME/pennypath/repo"
+mkdir -p "$HOME/Serwer/penny-path/"
+git clone --branch main https://github.com/pawelkam/PennyPath.git "$HOME/Serwer/penny-path/repo"
+cd "$HOME/Serwer/penny-path/repo"
 git rev-parse HEAD
 ```
 
@@ -218,8 +218,8 @@ Workflow sam pobiera właściwy commit do katalogu roboczego runnera. Nie musisz
 **Miejsce: Mac-serwer. Ten etap wykonujesz raz.**
 
 ```sh
-cd "$HOME/pennypath/repo"
-deploy_dir="$HOME/pennypath/deploy"
+cd "$HOME/Serwer/penny-path/repo"
+deploy_dir="$HOME/Serwer/penny-path/deploy"
 mkdir -p "$deploy_dir"
 chmod 700 "$deploy_dir"
 ```
@@ -263,7 +263,7 @@ Hasło pozostaje na serwerze i jest montowane tylko do PostgreSQL. Po pierwszej 
 **Miejsce: Mac-serwer.**
 
 ```sh
-cd "$HOME/pennypath/repo"
+cd "$HOME/Serwer/penny-path/repo"
 release_sha=$(git rev-parse HEAD)
 docker pull --platform linux/arm64 "ghcr.io/pawelkam/pennypath:$release_sha"
 release_image=$(docker image inspect --format '{{index .RepoDigests 0}}' "ghcr.io/pawelkam/pennypath:$release_sha")
@@ -282,7 +282,7 @@ Jeśli pull zwraca `denied`/`unauthorized`, wróć do ustawień widoczności pak
 **Miejsce: Mac-serwer.**
 
 ```sh
-deploy_dir="$HOME/pennypath/deploy"
+deploy_dir="$HOME/Serwer/penny-path/deploy"
 APP_IMAGE="$release_image" docker compose --project-name pennypath \
   --env-file "$deploy_dir/.env" -f "$deploy_dir/compose.yaml" \
   config --quiet
@@ -297,7 +297,7 @@ APP_IMAGE="$release_image" docker compose --project-name pennypath \
 Uruchom pierwsze wydanie aplikacji:
 
 ```sh
-cd "$HOME/pennypath/repo"
+cd "$HOME/Serwer/penny-path/repo"
 bash scripts/deploy.sh "$release_image"
 python3 scripts/smoke-test.py http://127.0.0.1:8080
 ```
@@ -307,7 +307,7 @@ python3 scripts/smoke-test.py http://127.0.0.1:8080
 Sprawdź stan:
 
 ```sh
-cd "$HOME/pennypath/deploy"
+cd "$HOME/Serwer/penny-path/deploy"
 docker compose --env-file .env --env-file release.env ps
 cat release.env
 docker volume inspect pennypath_postgres_data
@@ -354,8 +354,8 @@ Na GitHub: Settings → Actions → Runners → New self-hosted runner. Wybierz 
 Na Macu przygotuj katalog:
 
 ```sh
-mkdir -p "$HOME/actions-runner"
-cd "$HOME/actions-runner"
+mkdir -p "$HOME/Serwer/penny-path/actions-runner"
+cd "$HOME/Serwer/penny-path/actions-runner"
 ```
 
 Wykonaj z ekranu GitHub komendy pobrania, weryfikacji i rozpakowania. Jeśli pokazują tworzenie katalogu `actions-runner`, nie twórz zagnieżdżonego katalogu drugi raz — jesteś już we właściwym miejscu.
@@ -382,7 +382,7 @@ Uruchom runnera na próbę:
 Naciśnij **Ctrl+C**, aby zakończyć próbę. Na tym samym koncie, w zalogowanej sesji macOS, zainstaluj usługę:
 
 ```sh
-cd "$HOME/actions-runner"
+cd "$HOME/Serwer/penny-path/actions-runner"
 ./svc.sh install
 ./svc.sh start
 ./svc.sh status
@@ -403,9 +403,9 @@ Workflow wybiera kontekst `orbstack` i dodaje katalog narzędzi do PATH. Przed w
   export DOCKER_CONTEXT=orbstack
   docker info >/dev/null
   docker compose version
-  test -r "$HOME/pennypath/deploy/compose.yaml"
-  test -r "$HOME/pennypath/deploy/.env"
-  test -r "$HOME/pennypath/deploy/release.env"
+  test -r "$HOME/Serwer/penny-path/deploy/compose.yaml"
+  test -r "$HOME/Serwer/penny-path/deploy/.env"
+  test -r "$HOME/Serwer/penny-path/deploy/release.env"
   printf "Dostęp do Docker i konfiguracji wdrożenia działa.\n"
 '
 ```
@@ -425,7 +425,7 @@ Jeśli nie widać Run workflow, sprawdź, czy workflow z `workflow_dispatch` zna
 Na Macu sprawdź:
 
 ```sh
-cd "$HOME/pennypath/deploy"
+cd "$HOME/Serwer/penny-path/deploy"
 docker compose --env-file .env --env-file release.env ps
 cat release.env
 app_container=$(docker compose --env-file .env --env-file release.env ps -q app)
@@ -479,9 +479,9 @@ Najpierw ustaw `DEPLOY_ENABLED=false` i poczekaj na zakończenie już uruchomion
 Na Macu:
 
 ```sh
-cd "$HOME/pennypath/deploy"
+cd "$HOME/Serwer/penny-path/deploy"
 cat release.env
-cd "$HOME/pennypath/repo"
+cd "$HOME/Serwer/penny-path/repo"
 bash scripts/deploy.sh rollback
 python3 scripts/smoke-test.py http://127.0.0.1:8080
 ```
@@ -497,7 +497,7 @@ Automatyczny rollback po niesprawnym obrazie jest sprawdzany przez test kontener
 **Miejsce: Mac-serwer.**
 
 ```sh
-cd "$HOME/pennypath/deploy"
+cd "$HOME/Serwer/penny-path/deploy"
 umask 077
 mkdir -p backups
 chmod 700 backups
@@ -551,13 +551,13 @@ Przenieś zaszyfrowaną kopię poza Maca, np. na drugi komputer albo do wybraneg
 Na serwerze utwórz poniższy skrypt. Nie trafia do repozytorium:
 
 ```sh
-cat > "$HOME/pennypath/deploy/backup.sh" <<'SH'
+cat > "$HOME/Serwer/penny-path/deploy/backup.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
 export PATH="$HOME/.orbstack/bin:/opt/homebrew/bin:/usr/bin:/bin:$PATH"
 export DOCKER_CONTEXT=orbstack
-cd "$HOME/pennypath/deploy"
+cd "$HOME/Serwer/penny-path/deploy"
 mkdir -p backups
 backup_file="backups/pennypath-$(date +%Y%m%d-%H%M%S).dump"
 docker compose --env-file .env --env-file release.env exec -T postgres \
@@ -565,8 +565,8 @@ docker compose --env-file .env --env-file release.env exec -T postgres \
 mv "$backup_file.tmp" "$backup_file"
 printf 'Backup OK: %s\n' "$backup_file"
 SH
-chmod 700 "$HOME/pennypath/deploy/backup.sh"
-bash "$HOME/pennypath/deploy/backup.sh"
+chmod 700 "$HOME/Serwer/penny-path/deploy/backup.sh"
+bash "$HOME/Serwer/penny-path/deploy/backup.sh"
 ```
 
 Wykonaj `crontab -e` na tym samym koncie i dodaj wpis, zastępując `<konto>` nazwą z kroku 1:
@@ -592,10 +592,10 @@ Wpis robi eksport o 03:00, kiedy Mac działa i OrbStack jest uruchomiony. Sprawd
 Komendy kontrolne:
 
 ```sh
-cd "$HOME/pennypath/deploy"
+cd "$HOME/Serwer/penny-path/deploy"
 docker compose --env-file .env --env-file release.env ps
 curl -fsS http://127.0.0.1:8080/health
-cd "$HOME/actions-runner"
+cd "$HOME/Serwer/penny-path/actions-runner"
 ./svc.sh status
 ```
 
@@ -606,7 +606,7 @@ cd "$HOME/actions-runner"
 **Miejsce: Mac-serwer.** Zawsze zaczynaj od:
 
 ```sh
-cd "$HOME/pennypath/deploy"
+cd "$HOME/Serwer/penny-path/deploy"
 ```
 
 Stan, ostatnie logi i obserwacja logów aplikacji:
@@ -659,7 +659,7 @@ Automatyczne wydania aktualizują tylko obraz aplikacji. Nie aktualizują Postgr
 Najpierw wyłącz `DEPLOY_ENABLED`, poczekaj na zakończenie aktywnych zadań i potwierdź, że na Macu nie działa `deploy.sh`. Odczytaj `release.env` oraz obraz działającego kontenera. Jeśli istnieje poprawny zapis poprzednio działającego wydania, możesz odtworzyć samą aplikację z tego zapisu:
 
 ```sh
-cd "$HOME/pennypath/deploy"
+cd "$HOME/Serwer/penny-path/deploy"
 unset APP_IMAGE
 cat release.env
 docker compose --env-file .env --env-file release.env up -d --no-deps --pull never app
@@ -668,7 +668,7 @@ docker compose --env-file .env --env-file release.env up -d --no-deps --pull nev
 Poczekaj na healthy, sprawdź `/health` oraz zgodność obrazu z `APP_IMAGE` zapisanym w pliku. Dopiero gdy potwierdzisz, że nie trwa wdrożenie i blokada jest pozostałością awarii, usuń pusty katalog blokady:
 
 ```sh
-rmdir "$HOME/pennypath/deploy/.deploy-lock"
+rmdir "$HOME/Serwer/penny-path/deploy/.deploy-lock"
 ```
 
 Nie edytuj digestów tylko po to, żeby ominąć kontrolę stanu. Jeśli nie ma jeszcze `release.env` (pierwsze wydanie się nie udało), przejrzyj logi zatrzymanej aplikacji i napraw przyczynę przed kolejną inicjalizacją.
