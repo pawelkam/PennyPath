@@ -58,6 +58,13 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy" })).AllowAnonymo
 app.Map("/api/{**path}", () => Results.NotFound()).AllowAnonymous();
 app.MapFallbackToFile("index.html").AllowAnonymous();
 
+// Missing files bypass the SPA's :nonfile fallback and must remain public 404s.
+app.MapFallback("{*path:file}", context =>
+{
+    context.Response.StatusCode = StatusCodes.Status404NotFound;
+    return Task.CompletedTask;
+}).AllowAnonymous();
+
 app.Run();
 
 public partial class Program { }
