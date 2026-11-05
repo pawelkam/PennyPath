@@ -7,3 +7,4 @@ postgres-password
 artifacts/
 backend/PennyPath.Api/wwwroot/
 __pycache__/
+.agents
