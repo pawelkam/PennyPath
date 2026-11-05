@@ -3,7 +3,7 @@
 set -euo pipefail
 umask 077
 
-deploy_dir=${DEPLOY_DIR:-"$HOME/pennypath/deploy"}
+deploy_dir=${DEPLOY_DIR:-"$HOME/Serwer/penny-path/deploy"}
 repository=${IMAGE_REPOSITORY:-ghcr.io/pawelkam/pennypath}
 health_timeout=${DEPLOY_HEALTH_TIMEOUT:-120}
 case "$health_timeout" in
