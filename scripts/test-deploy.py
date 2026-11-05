@@ -1,0 +1,161 @@
+#!/usr/bin/env python3
+"""Failure-path tests for the macOS-compatible deployment transaction."""
+import json
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+
+SCRIPT = Path(__file__).resolve().with_name("deploy.sh")
+REPO = "ghcr.io/pawelkam/pennypath"
+OLD = REPO + "@sha256:" + "a" * 64
+NEW = REPO + "@sha256:" + "b" * 64
+PREVIOUS = REPO + "@sha256:" + "c" * 64
+
+FAKE_DOCKER = r'''#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+p = Path(os.environ["FAKE_STATE"])
+s = json.loads(p.read_text())
+a = sys.argv[1:]
+s["calls"].append(a)
+result, output = 0, ""
+image = os.environ.get("APP_IMAGE", "")
+if a[0] == "compose":
+    a = a[a.index("compose.yaml") + 1:]
+    if a[0] == "ps":
+        output = "db" if a[-1] == "postgres" and s.get("db_healthy", True) else ""
+        if a[-1] == "app" and s.get("image"): output = "app"
+    elif a[0] == "up":
+        assert a[-1] == "app" and "--no-deps" in a and "--pull" in a
+        s["image"] = image
+        if image == s.get("up_fail"): result = 1
+    elif a[0] == "port": output = "0.0.0.0:8080"
+    elif a[0] == "stop": s["image"] = ""
+elif a[0] == "pull":
+    if a[-1] == s.get("pull_fail"): result = 1
+elif a[0] == "inspect":
+    if "Config.Image" in a[2]: output = s.get("image", "")
+    elif a[-1] == "db": output = "healthy"
+    else: output = "unhealthy" if s.get("image") == s.get("unhealthy") else "healthy"
+elif a[:2] == ["image", "inspect"]:
+    if s.get("missing_cache"): result = 1
+else: raise AssertionError(a)
+p.write_text(json.dumps(s))
+if output: print(output)
+sys.exit(result)
+'''
+
+
+class DeploymentTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="pennypath-deploy-", dir="/private/tmp" if Path("/private/tmp").exists() else "/tmp")
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name)
+        (self.directory / "compose.yaml").write_text("# mocked compose\n")
+        (self.directory / ".env").write_text("# mocked server config\n")
+        bin_dir = self.directory / "bin"
+        bin_dir.mkdir()
+        for name, content in {"docker": FAKE_DOCKER, "curl": "#!/bin/sh\nprintf 200\n", "sleep": "#!/bin/sh\nexit 0\n"}.items():
+            path = bin_dir / name
+            path.write_text(content)
+            path.chmod(0o700)
+        self.state = self.directory / "fake.json"
+        self.state.write_text(json.dumps({"image": OLD, "calls": []}))
+        self.record(OLD, PREVIOUS)
+        self.env = {**os.environ, "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
+                    "DEPLOY_DIR": str(self.directory), "DEPLOY_HEALTH_TIMEOUT": "1", "FAKE_STATE": str(self.state)}
+
+    def record(self, current, previous=""):
+        (self.directory / "release.env").write_text(f"APP_IMAGE={current}\nPREVIOUS_IMAGE={previous}\n")
+
+    def configure(self, **values):
+        data = json.loads(self.state.read_text())
+        data.update(values)
+        self.state.write_text(json.dumps(data))
+
+    def run_deploy(self, image=NEW, success=True):
+        result = subprocess.run(["bash", str(SCRIPT), image], env=self.env, text=True, capture_output=True, timeout=15)
+        self.assertEqual(result.returncode == 0, success, result.stdout + result.stderr)
+        data = json.loads(self.state.read_text())
+        for call in data["calls"]:
+            if "up" in call or "stop" in call:
+                self.assertEqual(call[-1], "app")
+        self.assertFalse((self.directory / ".deploy-lock").exists())
+        return data
+
+    def test_success_records_previous(self):
+        self.assertEqual(self.run_deploy()["image"], NEW)
+        self.assertEqual((self.directory / "release.env").read_text(), f"APP_IMAGE={NEW}\nPREVIOUS_IMAGE={OLD}\n")
+
+    def test_pull_failure_keeps_running_app_and_state(self):
+        self.configure(pull_fail=NEW)
+        data = self.run_deploy(success=False)
+        self.assertEqual(data["image"], OLD)
+        self.assertFalse(any("up" in call for call in data["calls"]))
+        self.assertIn(f"PREVIOUS_IMAGE={PREVIOUS}", (self.directory / "release.env").read_text())
+
+    def test_unhealthy_release_restores_current(self):
+        self.configure(unhealthy=NEW)
+        self.assertEqual(self.run_deploy(success=False)["image"], OLD)
+        self.assertIn(f"APP_IMAGE={OLD}", (self.directory / "release.env").read_text())
+
+    def test_partial_compose_failure_restores_current(self):
+        self.configure(up_fail=NEW)
+        self.assertEqual(self.run_deploy(success=False)["image"], OLD)
+
+    def test_manual_rollback_swaps_releases(self):
+        self.assertEqual(self.run_deploy("rollback")["image"], PREVIOUS)
+        self.assertEqual((self.directory / "release.env").read_text(), f"APP_IMAGE={PREVIOUS}\nPREVIOUS_IMAGE={OLD}\n")
+
+    def test_retry_same_release_keeps_previous(self):
+        self.run_deploy(OLD)
+        self.assertIn(f"PREVIOUS_IMAGE={PREVIOUS}", (self.directory / "release.env").read_text())
+
+    def test_initial_failure_stops_only_app(self):
+        (self.directory / "release.env").unlink()
+        self.configure(image="", unhealthy=NEW)
+        self.assertEqual(self.run_deploy(success=False)["image"], "")
+        self.assertFalse((self.directory / "release.env").exists())
+
+    def test_initial_success_has_no_previous(self):
+        (self.directory / "release.env").unlink()
+        self.configure(image="")
+        self.run_deploy()
+        self.assertEqual((self.directory / "release.env").read_text(), f"APP_IMAGE={NEW}\nPREVIOUS_IMAGE=\n")
+
+    def test_untracked_app_is_rejected(self):
+        self.configure(image=PREVIOUS)
+        self.assertEqual(self.run_deploy(success=False)["image"], PREVIOUS)
+
+    def test_invalid_digest_is_rejected(self):
+        self.assertEqual(self.run_deploy(REPO + ":latest", success=False)["image"], OLD)
+
+    def test_missing_database_is_rejected(self):
+        self.configure(db_healthy=False)
+        self.assertEqual(self.run_deploy(success=False)["image"], OLD)
+
+    def test_missing_rollback_image_is_rejected_before_change(self):
+        self.configure(missing_cache=True)
+        self.assertEqual(self.run_deploy(success=False)["image"], OLD)
+
+    def test_no_previous_release(self):
+        self.record(OLD)
+        self.run_deploy("rollback", success=False)
+
+    def test_rollback_failure_is_reported(self):
+        self.configure(unhealthy=NEW, up_fail=OLD)
+        self.run_deploy(success=False)
+        self.assertIn(f"APP_IMAGE={OLD}", (self.directory / "release.env").read_text())
+
+    def test_lock_rejects_concurrent_deployment(self):
+        (self.directory / ".deploy-lock").mkdir()
+        result = subprocess.run(["bash", str(SCRIPT), NEW], env=self.env, capture_output=True, timeout=10)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((self.directory / ".deploy-lock").is_dir())
+        self.assertEqual(json.loads(self.state.read_text())["calls"], [])
+
+
+if __name__ == "__main__":
+    unittest.main()

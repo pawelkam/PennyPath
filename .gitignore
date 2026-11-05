@@ -1,0 +1,9 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+postgres-password
+*.dump
+artifacts/
+backend/PennyPath.Api/wwwroot/
+__pycache__/

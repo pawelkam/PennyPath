@@ -1,0 +1,41 @@
+name: pennypath
+
+services:
+  app:
+    image: ${APP_IMAGE:?Set APP_IMAGE to the release image digest}
+    platform: linux/arm64
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:18
+    platform: linux/arm64
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pennypath
+      POSTGRES_USER: pennypath
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pennypath -d pennypath"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  postgres_data:
+
+secrets:
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_FILE:?Set the server-side password file path}

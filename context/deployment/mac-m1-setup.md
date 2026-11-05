@@ -1,0 +1,692 @@
+# PennyPath — samodzielna konfiguracja Maca M1 i pipeline’u
+
+Instrukcja przygotowana 2026-10-14 dla plików obecnych w tym repozytorium. Wszystkie instalacje, zmiany ustawień GitHub, komendy na serwerze i wdrożenia wykonujesz sam. Instrukcja prowadzi od pustej konfiguracji do pierwszego wdrożenia i aktualizacji po merge.
+
+## Jak korzystać z instrukcji
+
+Każdy etap ma oznaczenie miejsca wykonania:
+
+| Miejsce | Znaczenie |
+| --- | --- |
+| **Komputer roboczy** | Komputer z aktualnym workspace PennyPath i zmianami przygotowanymi do publikacji |
+| **GitHub** | Przeglądarka, repozytorium `pawelkam/PennyPath` |
+| **Mac-serwer** | Osobny Mac M1, zalogowane konto uruchamiające OrbStack i runnera |
+| **Drugie urządzenie** | Telefon lub komputer w tej samej domowej sieci |
+
+Wykonuj bloki po kolei i sprawdzaj wynik przed przejściem dalej. Fragmenty oznaczone `<...>` zastępujesz własnymi wartościami. Zmienne terminala nie przechodzą do nowego okna — w razie jego otwarcia ustaw je ponownie.
+
+Zakładamy repozytorium `pawelkam/PennyPath`, gałąź `main`, port aplikacji `8080` i konto użytkownika na Macu. Jeśli zmienisz właściciela/nazwę repozytorium, trzeba także dostosować adres obrazu w workflow, `scripts/deploy.sh` i etykietę źródła w Dockerfile.
+
+## Efekt końcowy
+
+```text
+Komputer roboczy → PR do main → sprawdzenia na GitHub ARM64
+                              ↓ merge
+                         push do main
+                              ↓
+                   verify → publish do GHCR
+                              ↓
+                  deploy na runnerze Maca M1
+                              ↓
+                  OrbStack / Docker Compose
+                    app + PostgreSQL 18
+                              ↓
+                   http://<adres-Maca>:8080
+```
+
+Przeglądarka korzysta z jednego adresu dla Vue i API. Obraz aplikacji zawiera obie części; na serwerze nie instalujesz Node ani SDK .NET. PostgreSQL ma własny trwały wolumen i nie publikuje portu w LAN. Aplikacja jest na razie starterem: `/weatherforecast` zwraca przykładowe dane, `/health` potwierdza działanie HTTP. Logowanie, wydatki, połączenie API z bazą i Cloudflare Tunnel powstaną później.
+
+### Pliki, z których korzystasz
+
+| Plik | Rola |
+| --- | --- |
+| [Dockerfile](../../Dockerfile) | Buduje Vue oraz backend .NET i tworzy obraz ARM64 |
+| [compose.yaml](../../compose.yaml) | Definiuje aplikację, PostgreSQL, wolumen i sekret |
+| [.env.example](../../.env.example) | Szablon konfiguracji serwera |
+| [containers.yml](../../.github/workflows/containers.yml) | Pipeline PR, publikacji i wdrożenia |
+| [deploy.sh](../../scripts/deploy.sh) | Wdraża digest i przywraca aplikację po błędzie |
+| [smoke-test.py](../../scripts/smoke-test.py) | Sprawdza stronę, statyczne zasoby, API i 404 |
+| [test-compose.sh](../../scripts/test-compose.sh) | Sprawdza rzeczywiste kontenery w izolacji w CI |
+
+Pliki są przygotowane w workspace. Pipeline zacznie działać dopiero po ich wysłaniu do GitHub.
+
+## 1. Przygotuj konto i system na serwerze
+
+**Miejsce: Mac-serwer.**
+
+Zaloguj się na konto, którego będziesz używać do obsługi aplikacji. To samo konto uruchomi OrbStack i GitHub runnera. Otwórz Terminal i wykonaj:
+
+```sh
+whoami
+uname -m
+sw_vers
+df -h "$HOME"
+```
+
+**Oczekiwany wynik:** znasz nazwę konta, architektura to `arm64`, znasz wersję macOS i ilość wolnego miejsca. Nazwę konta zapisz — jej katalog domowy będzie przechowywał konfigurację wdrożeń.
+
+Sprawdź narzędzia:
+
+```sh
+git --version
+python3 --version
+curl --version
+openssl version
+```
+
+Jeśli brakuje Git/narzędzi Apple, uruchom `xcode-select --install`, przejdź instalator i sprawdź ponownie. Jeśli Python 3 nadal nie działa, zainstaluj go przez Homebrew (`brew install python`, gdy masz już Homebrew) albo instalator z [python.org](https://www.python.org/downloads/macos/). Python służy do testu HTTP; nie uruchamia aplikacji.
+
+W Ustawieniach systemowych ustaw pracę Maca bez automatycznego usypiania podczas zasilania. Ekran może się wyłączać. W zależności od modelu i wersji macOS ustawienie jest w sekcji Energia lub Bateria → Opcje. [Instrukcja Apple](https://support.apple.com/guide/mac-help/set-sleep-and-wake-settings-mchle41a6ccd/mac).
+
+Ten wariant działa po zalogowaniu użytkownika i uruchomieniu OrbStack. Nie wymaga włączania automatycznego logowania ani wyłączania FileVault.
+
+## 2. Zainstaluj i sprawdź OrbStack
+
+**Miejsce: Mac-serwer.**
+
+1. Pobierz OrbStack z [orbstack.dev](https://orbstack.dev/download), zainstaluj i otwórz aplikację. Alternatywnie, z istniejącym Homebrew: `brew install orbstack`.
+2. Przejdź pierwsze uruchomienie i pozwól aplikacji przygotować narzędzia CLI.
+3. Włącz uruchamianie OrbStack przy logowaniu. Sprawdź także Ustawienia systemowe → Ogólne → Rzeczy otwierane podczas logowania, jeśli ustawienie nie jest widoczne w aplikacji.
+4. W ustawieniach Docker OrbStack upewnij się, że **Expose ports to LAN** jest włączone. Dzięki temu opublikowany port aplikacji będzie dostępny z telefonu/komputera w domu. [Instalacja](https://docs.orbstack.dev/quick-start), [dostęp LAN](https://docs.orbstack.dev/docker/network).
+
+Otwórz nowe okno Terminala:
+
+```sh
+export PATH="$HOME/.orbstack/bin:/opt/homebrew/bin:$PATH"
+docker context ls
+docker context use orbstack
+docker version
+docker compose version
+docker info
+docker run --rm --platform linux/arm64 hello-world
+```
+
+**Oczekiwany wynik:** kontekst `orbstack` jest aktywny, `docker version` pokazuje klienta i serwer, działa Compose, kontener `hello-world` kończy się sukcesem.
+
+Jeśli widzisz `Cannot connect to the Docker daemon`, uruchom OrbStack i sprawdź kontekst. Jeśli `docker: command not found`, sprawdź konfigurację narzędzi CLI w OrbStack i PATH. Nie używaj `sudo docker` — silnik i konfiguracja należą do zalogowanego konta.
+
+## 3. Przygotuj GitHub, zanim wyślesz kod
+
+**Miejsce: GitHub.**
+
+Otwórz [repozytorium PennyPath](https://github.com/pawelkam/PennyPath).
+
+1. W Settings → Actions → General sprawdź, czy Actions są włączone i polityka pozwala korzystać z `actions/checkout` oraz akcji `docker/*` użytych w workflow.
+2. W Settings → Secrets and variables → Actions → **Variables** dodaj zmienną repozytorium:
+
+   | Nazwa | Wartość |
+   | --- | --- |
+   | `DEPLOY_ENABLED` | `false` |
+
+3. Nie dodawaj na tym etapie hasła PostgreSQL ani tokenu GHCR do Secrets. Hasło zostanie plikiem na Macu; zadanie publikacji korzysta z automatycznego `GITHUB_TOKEN` i deklaracji `packages: write` we własnym workflow.
+4. Jeśli repozytorium ma już gałęzie, ustaw `main` jako domyślną. Jeśli jest puste, zrób to po pierwszym push.
+
+**Oczekiwany wynik:** `DEPLOY_ENABLED=false` widnieje w Variables. Pierwszy push będzie budował i publikował obraz, ale nie będzie jeszcze wdrażał na Maca.
+
+## 4. Wyślij przygotowany kod
+
+**Miejsce: komputer roboczy, aktualne repozytorium PennyPath.**
+
+```sh
+cd /Users/pawelkaminski/Projects/PennyPath
+git status --short
+git branch --show-current
+git remote -v
+```
+
+Sprawdź, czy gałąź to `main`, a `origin` wskazuje `pawelkam/PennyPath`. Jeśli pracujesz na innej gałęzi, przekaż tę zmianę do `main` swoim zwykłym sposobem. Nie zmieniaj gałęzi ani nie odrzucaj istniejących zmian bez ich przejrzenia.
+
+W workspace są też wcześniejsze zmiany dotyczące kursu i AGENTS.md. Poniższa lista wybiera aplikację oraz konfigurację wdrożenia; dopasuj ją do tego, co chcesz opublikować:
+
+```sh
+git add .dockerignore .env.example .gitignore .github Dockerfile compose.yaml global.json README.md
+git add frontend backend scripts context/deployment
+git add context/foundation/tech-stack.md context/foundation/infrastructure.md
+git diff --cached --stat
+git diff --cached --check
+git diff --cached
+```
+
+**Sprawdź przed commitem:** w staged są frontend, backend, `frontend/package-lock.json`, Dockerfile, Compose, workflow i skrypty. Nie ma prawdziwego `.env`, pliku hasła, `node_modules`, `bin`, `obj` ani wygenerowanego `wwwroot`.
+
+```sh
+git commit -m "Prepare ARM64 Compose deployment and GitHub pipeline"
+git push -u origin main
+```
+
+Jeśli Git wymaga konfiguracji autora, ustaw `git config user.name "<Twoje imię>"` i `git config user.email "<Twój email do commitów>"`, potem ponów commit. Jeśli HTTPS pyta o hasło do GitHub, użyj skonfigurowanej autoryzacji Git/SSH lub GitHub CLI; hasło konta nie służy do uwierzytelniania push.
+
+Jeśli push zgłasza `non-fast-forward`, sprawdź istniejące commity na GitHub i uzgodnij historię przed ponowną próbą. Pierwsza publikacja nie wymaga `--force`.
+
+## 5. Sprawdź pierwszy pipeline
+
+**Miejsce: GitHub → Actions → Containers.**
+
+Otwórz uruchomienie dla wysłanego commita `main`. Zadania powinny wyglądać tak:
+
+| Zadanie | Oczekiwany wynik przy pierwszym push |
+| --- | --- |
+| `verify` | Zielone: testy skryptów, build Vue/.NET ARM64 i testy kontenerów |
+| `publish` | Zielone: obraz opublikowany do GHCR |
+| `deploy` | `Skipped`, ponieważ `DEPLOY_ENABLED=false` |
+
+`verify` działa na `ubuntu-24.04-arm`, nie na domowym Macu. Sprawdza m.in. trwałość PostgreSQL, nieudane pobranie obrazu i rollback w osobnym projekcie Compose. Dostępność i rozliczenie runnera sprawdzisz w [dokumentacji GitHub](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+
+Jeśli zadanie jest czerwone, otwórz pierwszy krok z błędem, popraw przyczynę i powtórz pipeline. Nie przechodź do wdrożenia, dopóki `verify` i `publish` nie będą zielone. Zapisz pełny SHA tego commita — tag obrazu jest równy temu SHA.
+
+Workflow już zawiera wymagany podział pracy i uprawnienia. Nie musisz tworzyć drugiego workflow ani dodatkowego pipeline’u w OrbStack.
+
+## 6. Ustaw obraz GHCR jako publiczny
+
+**Miejsce: GitHub.**
+
+Otwórz profil `pawelkam` → Packages → `pennypath`, następnie Package settings → Change visibility → **Public**. Pakiet może być również widoczny w sekcji Packages przy repozytorium.
+
+Widoczność pakietu jest osobnym ustawieniem od widoczności repozytorium. Nowy pakiet jest domyślnie prywatny; w tym wariancie publiczny obraz będzie pobierany anonimowo przez Maca. [Dokumentacja GHCR](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+
+**Oczekiwany wynik:** pakiet `ghcr.io/pawelkam/pennypath` jest publiczny i zawiera wersję oznaczoną pełnym SHA pierwszego commita.
+
+## 7. Pobierz repozytorium na serwer
+
+**Miejsce: Mac-serwer, konto z kroku 1.**
+
+```sh
+mkdir -p "$HOME/pennypath"
+git clone --branch main https://github.com/pawelkam/PennyPath.git "$HOME/pennypath/repo"
+cd "$HOME/pennypath/repo"
+git rev-parse HEAD
+```
+
+Jeśli repozytorium jest prywatne, wykonaj clone przez skonfigurowany dostęp SSH, np. `git@github.com:pawelkam/PennyPath.git`, albo przez uwierzytelniony GitHub CLI. Dostęp do kodu i anonimowe pobranie publicznego obrazu to dwie niezależne sprawy.
+
+Jeśli katalog `repo` już istnieje i jest Twoim checkoutem, zamiast ponownego clone użyj `git status`, sprawdź gałąź i pobierz aktualizacje przez `git pull --ff-only origin main` na `main`.
+
+**Oczekiwany wynik:** istnieją `compose.yaml`, `.env.example`, `scripts/deploy.sh` i workflow. SHA checkoutu odpowiada zielonej publikacji z kroku 5. Nie przechodź dalej, jeśli najnowszy commit nie ma jeszcze opublikowanego obrazu.
+
+Docelowe katalogi:
+
+```text
+~/pennypath/repo/           ręczny checkout kodu i skryptów
+~/pennypath/deploy/         trwała konfiguracja, hasło, digests i kopie
+~/actions-runner/           instalacja runnera oraz jego roboczy checkout
+```
+
+Workflow sam pobiera właściwy commit do katalogu roboczego runnera. Nie musisz aktualizować ręcznego checkoutu na serwerze po każdym merge; aktualizuj go, gdy chcesz korzystać z nowszej wersji skryptów ręcznie.
+
+## 8. Utwórz trwałą konfigurację i hasło PostgreSQL
+
+**Miejsce: Mac-serwer. Ten etap wykonujesz raz.**
+
+```sh
+cd "$HOME/pennypath/repo"
+deploy_dir="$HOME/pennypath/deploy"
+mkdir -p "$deploy_dir"
+chmod 700 "$deploy_dir"
+```
+
+Sprawdź, czy katalog nie zawiera już `.env`, `postgres-password` albo `release.env`. Jeśli są, to prawdopodobnie masz już konfigurację — przejrzyj ją, zamiast wykonywać inicjalizację ponownie.
+
+Poniższy blok odmawia nadpisania istniejących plików:
+
+```sh
+if [ -e "$deploy_dir/.env" ] || [ -e "$deploy_dir/postgres-password" ] || [ -e "$deploy_dir/compose.yaml" ]; then
+  printf 'Konfiguracja już istnieje. Sprawdź ją przed dalszymi krokami.\n'
+else
+  cp compose.yaml "$deploy_dir/compose.yaml"
+  cp .env.example "$deploy_dir/.env"
+  (umask 077; openssl rand -hex 32 > "$deploy_dir/postgres-password")
+  chmod 600 "$deploy_dir/.env" "$deploy_dir/postgres-password"
+fi
+```
+
+Sprawdź pliki i konfigurację bez wyświetlania hasła:
+
+```sh
+ls -l "$deploy_dir/compose.yaml" "$deploy_dir/.env" "$deploy_dir/postgres-password"
+cat "$deploy_dir/.env"
+test -s "$deploy_dir/postgres-password" && printf 'Plik hasła jest niepusty.\n'
+```
+
+W `.env` powinno być:
+
+```dotenv
+POSTGRES_PASSWORD_FILE=./postgres-password
+APP_PORT=8080
+```
+
+Komentarze z szablonu mogą zostać. `APP_IMAGE` będzie ustawiane przez skrypt i po udanym wdrożeniu zapisane w `release.env`.
+
+Hasło pozostaje na serwerze i jest montowane tylko do PostgreSQL. Po pierwszej inicjalizacji wolumenu nie generuj go ponownie — zmiana pliku nie zmienia hasła istniejącej bazy.
+
+## 9. Pobierz dokładny obraz pierwszego wydania
+
+**Miejsce: Mac-serwer.**
+
+```sh
+cd "$HOME/pennypath/repo"
+release_sha=$(git rev-parse HEAD)
+docker pull --platform linux/arm64 "ghcr.io/pawelkam/pennypath:$release_sha"
+release_image=$(docker image inspect --format '{{index .RepoDigests 0}}' "ghcr.io/pawelkam/pennypath:$release_sha")
+printf '%s\n' "$release_image"
+docker image inspect --format '{{.Architecture}}' "$release_image"
+```
+
+**Oczekiwany wynik:** obraz pobiera się bez `docker login`, `release_image` ma postać `ghcr.io/pawelkam/pennypath@sha256:` i 64 znaki digestu, a architektura to `arm64`.
+
+Skrypt wdrożeniowy akceptuje digest, a nie tag. Dzięki temu wdraża konkretny obraz. Jeśli otworzysz nowy Terminal, odtwórz zmienne z tego kroku lub ustaw `release_image` na zapisany pełny adres digestu.
+
+Jeśli pull zwraca `denied`/`unauthorized`, wróć do ustawień widoczności pakietu. Jeśli obraz nie istnieje, sprawdź pełny SHA oraz wynik `publish`.
+
+## 10. Uruchom PostgreSQL i pierwszą aplikację
+
+**Miejsce: Mac-serwer.**
+
+```sh
+deploy_dir="$HOME/pennypath/deploy"
+APP_IMAGE="$release_image" docker compose --project-name pennypath \
+  --env-file "$deploy_dir/.env" -f "$deploy_dir/compose.yaml" \
+  config --quiet
+
+APP_IMAGE="$release_image" docker compose --project-name pennypath \
+  --env-file "$deploy_dir/.env" -f "$deploy_dir/compose.yaml" \
+  up -d --wait --wait-timeout 120 postgres
+```
+
+**Oczekiwany wynik:** konfiguracja jest poprawna i PostgreSQL osiąga stan healthy. `APP_IMAGE` jest tutaj wymagane do odczytania całego Compose, nawet gdy uruchamiasz tylko bazę.
+
+Uruchom pierwsze wydanie aplikacji:
+
+```sh
+cd "$HOME/pennypath/repo"
+bash scripts/deploy.sh "$release_image"
+python3 scripts/smoke-test.py http://127.0.0.1:8080
+```
+
+**Oczekiwany wynik:** komunikat `Deployed ...` i pozytywny wynik testu Vue, zasobów, SPA, health, API oraz 404. Skrypt utworzył `~/pennypath/deploy/release.env`.
+
+Sprawdź stan:
+
+```sh
+cd "$HOME/pennypath/deploy"
+docker compose --env-file .env --env-file release.env ps
+cat release.env
+docker volume inspect pennypath_postgres_data
+```
+
+Oba serwisy powinny być healthy. `APP_IMAGE` w `release.env` zawiera wdrożony digest; `PREVIOUS_IMAGE` jest pusty przy pierwszym wydaniu. Wolumen `pennypath_postgres_data` zawiera bazę. Trwały katalog `deploy` przechowuje konfigurację, nie samą zawartość wolumenu PostgreSQL.
+
+## 11. Sprawdź dostęp z domowej sieci
+
+**Miejsce: Mac-serwer, następnie drugie urządzenie.**
+
+Na Macu sprawdź:
+
+```sh
+curl -i http://127.0.0.1:8080/health
+networksetup -listallhardwareports
+```
+
+W wyniku `networksetup` znajdź aktywny Ethernet albo Wi-Fi i odpowiadające mu `Device`, np. `en0`. Dla tego urządzenia odczytaj adres (zastąp `en0`, jeśli interfejs jest inny):
+
+```sh
+ipconfig getifaddr en0
+```
+
+Adres Maca sprawdzisz także w Ustawieniach systemowych → Sieć → aktywne połączenie → Szczegóły. W routerze ustaw rezerwację DHCP dla tego Maca, żeby adres nie zmieniał się po restarcie.
+
+Na telefonie lub drugim komputerze w tej samej sieci otwórz:
+
+```text
+http://<adres-Maca>:8080
+http://<adres-Maca>:8080/health
+```
+
+**Oczekiwany wynik:** strona Vue i JSON zdrowia są dostępne. Używaj `http://`, bez HTTPS. Telefon musi korzystać z domowego Wi-Fi, a nie transmisji komórkowej lub izolowanej sieci gościnnej.
+
+Jeśli działa localhost, ale nie LAN, sprawdź **Expose ports to LAN** w OrbStack, zgodę na ruch przychodzący dla OrbStack w firewallu macOS, poprawny adres i izolację urządzeń w routerze. Nie trzeba ustawiać przekierowania portów na routerze do Internetu.
+
+## 12. Zarejestruj self-hosted runnera
+
+**Miejsce: GitHub i Mac-serwer. `DEPLOY_ENABLED` nadal ma wartość `false`.**
+
+Na GitHub: Settings → Actions → Runners → New self-hosted runner. Wybierz **macOS** i **ARM64**. GitHub pokaże aktualne komendy pobrania, sprawdzenia archiwum i rejestracji — korzystaj z nich, aby nie instalować starej wersji. [Instrukcja rejestracji](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners).
+
+Na Macu przygotuj katalog:
+
+```sh
+mkdir -p "$HOME/actions-runner"
+cd "$HOME/actions-runner"
+```
+
+Wykonaj z ekranu GitHub komendy pobrania, weryfikacji i rozpakowania. Jeśli pokazują tworzenie katalogu `actions-runner`, nie twórz zagnieżdżonego katalogu drugi raz — jesteś już we właściwym miejscu.
+
+Uruchom dostarczone przez GitHub `./config.sh --url ... --token ...`. W interaktywnych pytaniach ustaw:
+
+| Pole | Wartość |
+| --- | --- |
+| Runner group, jeśli pojawi się pytanie | Domyślna dostępna grupa |
+| Runner name | `pennypath-m1` |
+| Additional labels | `pennypath-deploy` |
+| Work folder | `_work` |
+
+Zachowaj domyślne etykiety `self-hosted`, `macOS`, `ARM64`. Workflow wymaga **wszystkich czterech** etykiet. Nie wybieraj opcji wyłączającej domyślne etykiety. Token rejestracyjny z ekranu GitHub wygasa po godzinie; jeśli wygasł, wygeneruj nowy, odświeżając procedurę. Nie zapisuj go w repozytorium.
+
+Uruchom runnera na próbę:
+
+```sh
+./run.sh
+```
+
+**Oczekiwany wynik:** `Connected to GitHub`, `Listening for Jobs`, a w Settings → Actions → Runners stan `Idle`.
+
+Naciśnij **Ctrl+C**, aby zakończyć próbę. Na tym samym koncie, w zalogowanej sesji macOS, zainstaluj usługę:
+
+```sh
+cd "$HOME/actions-runner"
+./svc.sh install
+./svc.sh start
+./svc.sh status
+```
+
+Użyj procedury [GitHub dla macOS](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/configure-the-application?platform=mac); nie uruchamiaj równocześnie `run.sh` i usługi. **Oczekiwany wynik:** usługa działa, runner wraca do `Idle` i pozostaje dostępny po zamknięciu Terminala.
+
+## 13. Sprawdź środowisko używane przez workflow
+
+**Miejsce: Mac-serwer.**
+
+Workflow wybiera kontekst `orbstack` i dodaje katalog narzędzi do PATH. Przed włączeniem wdrożeń sprawdź ten wariant bez polegania na konfiguracji Twojej powłoki:
+
+```sh
+/bin/bash --noprofile --norc -c '
+  set -e
+  export PATH="$HOME/.orbstack/bin:/opt/homebrew/bin:$PATH"
+  export DOCKER_CONTEXT=orbstack
+  docker info >/dev/null
+  docker compose version
+  test -r "$HOME/pennypath/deploy/compose.yaml"
+  test -r "$HOME/pennypath/deploy/.env"
+  test -r "$HOME/pennypath/deploy/release.env"
+  printf "Dostęp do Docker i konfiguracji wdrożenia działa.\n"
+'
+```
+
+**Oczekiwany wynik:** pozytywny komunikat. Jeśli nie działa, sprawdź konto runnera, OrbStack, PATH i lokalizację plików. `HOME` usługi musi wskazywać konto, na którym utworzyłeś `~/pennypath/deploy`.
+
+## 14. Włącz i uruchom automatyczne wdrożenie
+
+**Miejsce: GitHub.**
+
+1. Settings → Secrets and variables → Actions → Variables → edytuj `DEPLOY_ENABLED` na dokładnie **`true`** (małe litery).
+2. Actions → Containers → Run workflow → wybierz **`main`** → Run workflow.
+3. Poczekaj na zielone `verify`, `publish` i **`deploy`**.
+
+Jeśli nie widać Run workflow, sprawdź, czy workflow z `workflow_dispatch` znajduje się na domyślnej gałęzi repozytorium i domyślna gałąź to `main`.
+
+Na Macu sprawdź:
+
+```sh
+cd "$HOME/pennypath/deploy"
+docker compose --env-file .env --env-file release.env ps
+cat release.env
+app_container=$(docker compose --env-file .env --env-file release.env ps -q app)
+docker inspect --format '{{.Config.Image}}' "$app_container"
+docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$app_container"
+curl -fsS http://127.0.0.1:8080/health
+```
+
+**Oczekiwany wynik:** obraz kontenera zgadza się z `APP_IMAGE` w `release.env`, etykieta revision odpowiada SHA uruchomienia workflow, aplikacja jest zdrowa.
+
+Od tej chwili push do `main`, w tym merge PR, uruchamia cały przepływ. Automatyzacja serializuje wydania dla `main` i nie przerywa aktywnego wdrożenia. GitHub może zastąpić starsze oczekujące uruchomienie nowszym — nie traktuj tego mechanizmu jako gwarancji wdrożenia każdego pośredniego commita.
+
+## 15. Sprawdź rzeczywisty PR i merge
+
+**Miejsce: komputer roboczy i GitHub.**
+
+Na komputerze roboczym, po zsynchronizowaniu `main`, przygotuj małą zmianę README:
+
+```sh
+git switch main
+git pull --ff-only origin main
+git switch -c test/deployment-pipeline
+```
+
+Edytuj README, np. dodaj informację o wykonanym teście pipeline’u. Następnie:
+
+```sh
+git add README.md
+git commit -m "Verify deployment pipeline through a pull request"
+git push -u origin test/deployment-pipeline
+```
+
+Na GitHub utwórz PR do `main`:
+
+1. Poczekaj na `verify`. PR ma tylko sprawdzenia; `publish` i `deploy` są pomijane.
+2. Sprawdź, że uruchomiony obraz Maca nie zmienił się w czasie PR.
+3. Zrób merge.
+4. Otwórz nowe uruchomienie Containers dla `main` i poczekaj na trzy zielone zadania.
+5. Powtórz komendy inspekcji z kroku 14 i porównaj revision z SHA nowego wydania.
+
+**Oczekiwany wynik:** PR nie wdraża, merge aktualizuje aplikację, a `release.env` zapisuje poprzedni digest. Etykieta revision pozwala sprawdzić zmianę wydania nawet wtedy, gdy edytowałeś tylko dokumentację.
+
+Opcjonalnie ustaw ochronę `main`, wymagając PR i pozytywnego checku `verify`. Wybierz nazwę checku z faktycznie wykonanego PR; dostępność reguł zależy od rodzaju repozytorium i planu GitHub.
+
+## 16. Przećwicz ręczny rollback
+
+**Miejsce: GitHub i Mac-serwer. Potrzebujesz dwóch różnych wdrożonych digestów.**
+
+Najpierw ustaw `DEPLOY_ENABLED=false` i poczekaj na zakończenie już uruchomionych zadań `deploy`. Ta zmienna nie zatrzymuje wydania, które już trwa.
+
+Na Macu:
+
+```sh
+cd "$HOME/pennypath/deploy"
+cat release.env
+cd "$HOME/pennypath/repo"
+bash scripts/deploy.sh rollback
+python3 scripts/smoke-test.py http://127.0.0.1:8080
+```
+
+**Oczekiwany wynik:** aplikacja działa na wcześniejszym digestcie, `APP_IMAGE` i `PREVIOUS_IMAGE` zamieniły się miejscami, baza pozostaje uruchomiona.
+
+Drugie `bash scripts/deploy.sh rollback` przywróci wydanie, z którego właśnie się cofnąłeś. Po ćwiczeniu wróć do oczekiwanego wydania, sprawdź zdrowie i ustaw `DEPLOY_ENABLED=true`.
+
+Automatyczny rollback po niesprawnym obrazie jest sprawdzany przez test kontenerowy w CI. Na pierwszym wydaniu nie ma czego przywracać. Rollback dotyczy aplikacji; przyszłe migracje schematu bazy wymagają własnej zgodności z poprzednią wersją.
+
+## 17. Zrób kopię PostgreSQL i sprawdź odtworzenie
+
+**Miejsce: Mac-serwer.**
+
+```sh
+cd "$HOME/pennypath/deploy"
+umask 077
+mkdir -p backups
+chmod 700 backups
+backup_file="backups/pennypath-$(date +%Y%m%d-%H%M%S).dump"
+```
+
+Utwórz kopię i oznacz ją jako kompletną dopiero po udanym eksporcie:
+
+```sh
+if docker compose --env-file .env --env-file release.env exec -T postgres \
+  pg_dump -U pennypath -d pennypath -Fc > "$backup_file.tmp"; then
+  mv "$backup_file.tmp" "$backup_file"
+  chmod 600 "$backup_file"
+  printf 'Kopia zapisana: %s\n' "$backup_file"
+else
+  printf 'Eksport nie powiódł się. Plik .tmp nie jest poprawną kopią.\n'
+fi
+```
+
+Sprawdź zawartość kompletnej kopii:
+
+```sh
+docker compose --env-file .env --env-file release.env exec -T postgres \
+  pg_restore --list < "$backup_file"
+```
+
+**Oczekiwany wynik:** narzędzie odczytuje archiwum bez błędu. Na obecnym starterze baza nie ma jeszcze tabel domenowych, więc lista będzie mała. [PostgreSQL — pg_dump](https://www.postgresql.org/docs/18/app-pgdump.html).
+
+Odtwórz kopię do osobnej bazy kontrolnej:
+
+```sh
+docker compose --env-file .env --env-file release.env exec -T postgres \
+  createdb -U pennypath pennypath_restore_check
+docker compose --env-file .env --env-file release.env exec -T postgres \
+  pg_restore -U pennypath -d pennypath_restore_check --exit-on-error < "$backup_file"
+docker compose --env-file .env --env-file release.env exec -T postgres \
+  psql -U pennypath -d pennypath_restore_check -c '\dt'
+```
+
+**Oczekiwany wynik:** przywracanie kończy się bez błędów. Brak tabel na starterze jest poprawny. Gdy powstaną wydatki, dodatkowo porównuj liczbę rekordów i sumy. Po zakończeniu próby usuń wyłącznie bazę kontrolną:
+
+```sh
+docker compose --env-file .env --env-file release.env exec -T postgres \
+  dropdb -U pennypath pennypath_restore_check
+```
+
+Przenieś zaszyfrowaną kopię poza Maca, np. na drugi komputer albo do wybranego magazynu kopii. Zachowaj osobno konfigurację potrzebną do odtworzenia serwera. Sam wolumen OrbStack oraz katalog `backups` na tym samym dysku nie zastępują kopii poza urządzeniem.
+
+### Opcjonalnie: codzienny eksport
+
+Na serwerze utwórz poniższy skrypt. Nie trafia do repozytorium:
+
+```sh
+cat > "$HOME/pennypath/deploy/backup.sh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+export PATH="$HOME/.orbstack/bin:/opt/homebrew/bin:/usr/bin:/bin:$PATH"
+export DOCKER_CONTEXT=orbstack
+cd "$HOME/pennypath/deploy"
+mkdir -p backups
+backup_file="backups/pennypath-$(date +%Y%m%d-%H%M%S).dump"
+docker compose --env-file .env --env-file release.env exec -T postgres \
+  pg_dump -U pennypath -d pennypath -Fc > "$backup_file.tmp"
+mv "$backup_file.tmp" "$backup_file"
+printf 'Backup OK: %s\n' "$backup_file"
+SH
+chmod 700 "$HOME/pennypath/deploy/backup.sh"
+bash "$HOME/pennypath/deploy/backup.sh"
+```
+
+Wykonaj `crontab -e` na tym samym koncie i dodaj wpis, zastępując `<konto>` nazwą z kroku 1:
+
+```cron
+0 3 * * * /bin/bash /Users/<konto>/pennypath/deploy/backup.sh >> /Users/<konto>/pennypath/deploy/backups/backup.log 2>&1
+```
+
+Wpis robi eksport o 03:00, kiedy Mac działa i OrbStack jest uruchomiony. Sprawdź `crontab -l` oraz po pierwszym wykonaniu `backups/backup.log` i nowy plik `.dump`. Ten przykład nie przenosi kopii poza Maca, nie usuwa starszych kopii i nie wysyła powiadomień; dobierz retencję i transfer do swojego miejsca przechowywania. Jeśli macOS ogranicza cron, sprawdź zgody systemowe i log zadania.
+
+## 18. Sprawdź restart Maca
+
+**Miejsce: GitHub, Mac-serwer i drugie urządzenie.**
+
+1. Na czas próby ustaw `DEPLOY_ENABLED=false` i poczekaj na zakończenie aktywnego wydania.
+2. Zrestartuj Maca.
+3. Odblokuj FileVault, jeśli jest używany, i zaloguj konto serwera.
+4. Sprawdź, czy OrbStack uruchomił się automatycznie.
+5. Sprawdź `docker info`, stan Compose, `/health`, usługę runnera i jego status na GitHub.
+6. Otwórz aplikację z drugiego urządzenia.
+7. Przywróć `DEPLOY_ENABLED=true`, gdy wszystko działa.
+
+Komendy kontrolne:
+
+```sh
+cd "$HOME/pennypath/deploy"
+docker compose --env-file .env --env-file release.env ps
+curl -fsS http://127.0.0.1:8080/health
+cd "$HOME/actions-runner"
+./svc.sh status
+```
+
+**Oczekiwany wynik:** oba kontenery są healthy, runner jest Idle, adres LAN działa. Kontenery zatrzymane ręcznie przez `stop` albo usunięte przez `down` wymagają ponownego uruchomienia. Nie oczekuj dostępności aplikacji przed zalogowaniem użytkownika w tym wariancie.
+
+## 19. Codzienna obsługa
+
+**Miejsce: Mac-serwer.** Zawsze zaczynaj od:
+
+```sh
+cd "$HOME/pennypath/deploy"
+```
+
+Stan, ostatnie logi i obserwacja logów aplikacji:
+
+```sh
+docker compose --env-file .env --env-file release.env ps
+docker compose --env-file .env --env-file release.env logs --tail 100 app postgres
+docker compose --env-file .env --env-file release.env logs -f --tail 50 app
+```
+
+Ctrl+C kończy obserwację logów, nie zatrzymuje kontenerów.
+
+Ponowne uruchomienie samej aplikacji:
+
+```sh
+docker compose --env-file .env --env-file release.env restart app
+```
+
+Uruchomienie usług po świadomym zatrzymaniu:
+
+```sh
+docker compose --env-file .env --env-file release.env up -d --wait --wait-timeout 120
+```
+
+Przed planowanym zatrzymaniem usług lub ręcznym wdrożeniem wyłącz `DEPLOY_ENABLED` i zaczekaj na zakończenie aktywnego zadania. `stop`/`down` zachowują wolumen, ale `down --volumes` go usuwa. Nie używaj czyszczenia wolumenów ani resetu Docker w OrbStack jako sposobu naprawy wdrożenia.
+
+Automatyczne wydania aktualizują tylko obraz aplikacji. Nie aktualizują PostgreSQL, OrbStack, macOS ani trwałego `compose.yaml`. Jeśli zmienisz Compose w repozytorium, porównaj go z kopią w `deploy`, zachowaj poprzednią konfigurację i zsynchronizuj świadomie. Zmiana major PostgreSQL jest osobnym zadaniem z kopią i procedurą migracji.
+
+## 20. Rozwiązywanie typowych problemów
+
+| Objaw | Co sprawdzić |
+| --- | --- |
+| `verify` nie startuje lub runner GitHub ARM64 jest niedostępny | Actions są włączone; runner `ubuntu-24.04-arm` jest dostępny dla Twojego repozytorium/konta; limit minut nie został wyczerpany |
+| `publish` zgłasza brak uprawnień | W logu używany jest `GITHUB_TOKEN`; workflow ma `packages: write`; pakiet należy do `pawelkam` i jest połączony z PennyPath; polityka organizacji nie blokuje publikacji |
+| `deploy` ma stan `Skipped` | Uruchomienie dotyczy `main`, nie PR; `publish` się udało; repozytoryjna Variable `DEPLOY_ENABLED` to dokładnie `true` |
+| `deploy` czeka na runnera | Runner ma stan Idle/Online i komplet etykiet: `self-hosted`, `macOS`, `ARM64`, `pennypath-deploy` |
+| `docker info` działa w Terminalu, ale nie w workflow | Konto/HOME usługi runnera, PATH i kontekst `orbstack`; powtórz krok 13 |
+| Skrypt zgłasza brak konfiguracji | Pliki są w `~/pennypath/deploy` konta runnera, a nie wyłącznie w checkoutcie repozytorium |
+| Baza nie staje się healthy | Logi `postgres`, niepusty plik hasła i prawa odczytu; nie inicjalizuj ponownie istniejącego wolumenu |
+| Port 8080 jest zajęty | `lsof -nP -iTCP:8080 -sTCP:LISTEN`; ustal, jaki proces używa portu. Jeśli świadomie zmienisz `APP_PORT`, dostosuj adres testów i LAN |
+| Działa localhost, nie działa LAN | Expose ports to LAN, firewall dla OrbStack, aktywny adres interfejsu, wspólna sieć i izolacja klientów |
+| Obraz nie pobiera się anonimowo | Widoczność pakietu GHCR to Public; pełny SHA został opublikowany |
+| Healthcheck wdrożenia nie przechodzi | Logi aplikacji; oczekiwany digest; lokalny `/health`; pipeline powinien zgłosić błąd i odtworzyć ostatnie działające wydanie |
+| `No previous release is recorded` | Masz tylko jedno wydanie; wykonaj drugie udane wdrożenie innego digestu |
+| `Another deployment holds .../.deploy-lock` | Sprawdź aktywne Actions i procesy wdrożenia; poczekaj na ich zakończenie. Po awarii wykonaj procedurę poniżej |
+| `Running app differs from release.env` | Ktoś zmienił obraz ręcznie albo wdrożenie zostało przerwane; uzgodnij kontener ze stanem zapisanym w `release.env` |
+
+### Przywrócenie zapisanego stanu po przerwanym wdrożeniu
+
+Najpierw wyłącz `DEPLOY_ENABLED`, poczekaj na zakończenie aktywnych zadań i potwierdź, że na Macu nie działa `deploy.sh`. Odczytaj `release.env` oraz obraz działającego kontenera. Jeśli istnieje poprawny zapis poprzednio działającego wydania, możesz odtworzyć samą aplikację z tego zapisu:
+
+```sh
+cd "$HOME/pennypath/deploy"
+unset APP_IMAGE
+cat release.env
+docker compose --env-file .env --env-file release.env up -d --no-deps --pull never app
+```
+
+Poczekaj na healthy, sprawdź `/health` oraz zgodność obrazu z `APP_IMAGE` zapisanym w pliku. Dopiero gdy potwierdzisz, że nie trwa wdrożenie i blokada jest pozostałością awarii, usuń pusty katalog blokady:
+
+```sh
+rmdir "$HOME/pennypath/deploy/.deploy-lock"
+```
+
+Nie edytuj digestów tylko po to, żeby ominąć kontrolę stanu. Jeśli nie ma jeszcze `release.env` (pierwsze wydanie się nie udało), przejrzyj logi zatrzymanej aplikacji i napraw przyczynę przed kolejną inicjalizacją.
+
+## Lista odbioru
+
+- [ ] OrbStack i Docker Compose działają na Macu ARM64.
+- [ ] `main` zawiera aplikację, lockfile, Dockerfile, Compose, skrypty i workflow.
+- [ ] Pierwsze `verify` i `publish` są zielone.
+- [ ] Pakiet GHCR jest publiczny i pobiera się anonimowo.
+- [ ] Konfiguracja i hasło są w trwałym katalogu na serwerze.
+- [ ] Pierwsze ręczne wdrożenie i test HTTP przeszły.
+- [ ] Strona działa z drugiego urządzenia w LAN.
+- [ ] Runner działa jako usługa na tym samym koncie co OrbStack.
+- [ ] Ręczne uruchomienie workflow na `main` wdraża obraz.
+- [ ] PR wykonuje tylko sprawdzenia, merge aktualizuje aplikację.
+- [ ] Ręczny rollback został przećwiczony.
+- [ ] Kopia PostgreSQL daje się odtworzyć, a kompletna kopia jest poza Macem.
+- [ ] Po restarcie i zalogowaniu kontenery, runner i dostęp LAN wracają.
+
+Wyniki swojej instalacji możesz dopisać do [verification.md](verification.md), oddzielając je od lokalnych testów wykonanych wcześniej. Docelowy serwer jest skonfigurowany dopiero wtedy, gdy powyższe sprawdzenia faktycznie przejdą.
