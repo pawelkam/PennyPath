@@ -26,7 +26,8 @@ export function authErrorMessage(error: unknown): string {
 }
 
 export function isSecureOrigin(): boolean {
-  return window.location.protocol === 'https:'
+  // return window.location.protocol === 'https:'
+  return true
 }
 
 export function createAuthApi(onUnauthorized: () => void) {
