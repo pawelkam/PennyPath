@@ -392,14 +392,14 @@ CA i Data Protection keys wymagają kopii/ochrony jak inne sekrety; prywatny klu
 
 #### Automated
 
-- [x] 2.1 Testy HTTP, CSRF i maksymalnego czasu sesji przechodzą: `dotnet test backend/PennyPath.Api.Tests/PennyPath.Api.Tests.csproj --filter Category=Auth`.
-- [x] 2.2 Cały zestaw testów backendu przechodzi: `dotnet test backend/PennyPath.slnx`.
-- [x] 2.3 Przykłady HTTP i kod przechodzą kompilację: `dotnet build backend/PennyPath.slnx --no-restore`.
-- [x] 2.4 Zmiany nie zawierają błędów whitespace: `git diff --check`.
+- [x] 2.1 Testy HTTP, CSRF i maksymalnego czasu sesji przechodzą: `dotnet test backend/PennyPath.Api.Tests/PennyPath.Api.Tests.csproj --filter Category=Auth`. — ed05d8f
+- [x] 2.2 Cały zestaw testów backendu przechodzi: `dotnet test backend/PennyPath.slnx`. — ed05d8f
+- [x] 2.3 Przykłady HTTP i kod przechodzą kompilację: `dotnet build backend/PennyPath.slnx --no-restore`. — ed05d8f
+- [x] 2.4 Zmiany nie zawierają błędów whitespace: `git diff --check`. — ed05d8f
 
 #### Manual
 
-- [x] 2.5 Użytkownik potwierdził kontrakt rejestracja → osobne logowanie, prywatny odczyt bieżącego użytkownika i maksymalnie 7-dniową sesję bez jej automatycznego przedłużania.
+- [x] 2.5 Użytkownik potwierdził kontrakt rejestracja → osobne logowanie, prywatny odczyt bieżącego użytkownika i maksymalnie 7-dniową sesję bez jej automatycznego przedłużania. — ed05d8f
 
 ### Phase 3: Przepływ w Vue
 
