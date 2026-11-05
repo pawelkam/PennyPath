@@ -46,7 +46,7 @@ Porównanie okresów w S-03 i ustawienie ich początku w S-04 domykają pierwsze
 | ID | Change ID | Outcome (user can …) | Prerequisites | PRD refs | Status |
 | --- | --- | --- | --- | --- | --- |
 | F-01 | spending-reconciliation-checks | (foundation) Istnieją minimalne przypadki referencyjne i sposób uruchomienia sprawdzenia zgodności rejestru i podsumowania dla kwot, dat zakupu oraz kategorii i podkategorii. | — | FR-002, FR-004, Business Logic, Non-Functional Requirements | done |
-| S-01 | private-account-access | Użytkownik może zalogować się adresem email i hasłem w przeglądarce oraz uzyskać dostęp do własnego obszaru, z kontrolą dostępu dla niezalogowanych osób. | — | FR-001, US-01, Access Control, Non-Functional Requirements | blocked |
+| S-01 | private-account-access | Użytkownik może zalogować się adresem email i hasłem w przeglądarce oraz uzyskać dostęp do własnego obszaru, z kontrolą dostępu dla niezalogowanych osób. | — | FR-001, US-01, Access Control, Non-Functional Requirements | in-progress |
 | S-02 | first-manual-expense | Użytkownik może dodać wydatek z nazwą, kwotą w PLN, datą zakupu i kategorią/podkategorią z zestawu początkowego, zobaczyć go we własnym rejestrze i odświeżonym podsumowaniu bieżącego okresu. | F-01, S-01 | US-01, FR-001, FR-002, FR-004, FR-006, Business Logic, Non-Functional Requirements | proposed |
 | S-03 | compare-spending-periods | Użytkownik może porównać wydatki bieżącego i poprzedniego okresu według kategorii oraz podkategorii, z sumami zgodnymi z rejestrem. | S-02 | FR-002, US-01, Business Logic, Non-Functional Requirements | proposed |
 | S-04 | configure-spending-period | Użytkownik może ustawić dzień początku okresu od 1 do 28 i zobaczyć przeliczone zestawienia bieżącego oraz poprzedniego okresu według dat zakupu. | S-03 | FR-003, FR-002, Business Logic, Success Criteria | proposed |
@@ -116,7 +116,7 @@ PRD nie nadaje identyfikatorów wymaganiom niefunkcjonalnym; odwołania do nich 
 - **Unknowns:**
   - Jak użytkownicy uzyskują konto i co dzieje się przy wejściu bez logowania na chronioną stronę? — Owner: user. Block: yes.
 - **Risk:** Pierwszy prywatny przepływ wymaga ustalenia sposobu uzyskania konta. Minimalna ścieżka uruchomienia w przeglądarce i kontrola tożsamości powstają tutaj; S-02 zastosuje tę tożsamość do rzeczywistych wydatków.
-- **Status:** blocked
+- **Status:** in-progress
 
 ### S-02: Pierwszy ręczny wydatek i aktualne podsumowanie
 

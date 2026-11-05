@@ -1,3 +1,4 @@
 <Solution>
   <Project Path="PennyPath.Api/PennyPath.Api.csproj" />
+  <Project Path="PennyPath.Api.Tests/PennyPath.Api.Tests.csproj" />
 </Solution>

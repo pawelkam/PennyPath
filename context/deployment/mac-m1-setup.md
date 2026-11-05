@@ -34,7 +34,7 @@ Komputer roboczy → PR do main → sprawdzenia na GitHub ARM64
                    http://<adres-Maca>:8080
 ```
 
-Przeglądarka korzysta z jednego adresu dla Vue i API. Obraz aplikacji zawiera obie części; na serwerze nie instalujesz Node ani SDK .NET. PostgreSQL ma własny trwały wolumen i nie publikuje portu w LAN. Aplikacja jest na razie starterem: `/weatherforecast` zwraca przykładowe dane, `/health` potwierdza działanie HTTP. Logowanie, wydatki, połączenie API z bazą i Cloudflare Tunnel powstaną później.
+Przeglądarka korzysta z jednego adresu dla Vue i API. Obraz aplikacji zawiera obie części; na serwerze nie instalujesz Node ani SDK .NET. PostgreSQL ma własny trwały wolumen i nie publikuje portu w LAN. `/weatherforecast` zwraca przykładowe dane, `/health` potwierdza działanie HTTP. Faza 1 S-01 dodaje konfigurację bazy, magazyn Identity i jednorazowy tryb `--migrate`; logowanie przez UI/API, HTTPS w LAN, wydatki i Cloudflare Tunnel powstają później. `/health` nie sprawdza schematu kont. Zwykły start aplikacji nie migruje bazy, a integracja migratora z automatycznym wydaniem należy do fazy 4 S-01.
 
 ### Pliki, z których korzystasz
 
@@ -224,39 +224,60 @@ mkdir -p "$deploy_dir"
 chmod 700 "$deploy_dir"
 ```
 
-Sprawdź, czy katalog nie zawiera już `.env`, `postgres-password` albo `release.env`. Jeśli są, to prawdopodobnie masz już konfigurację — przejrzyj ją, zamiast wykonywać inicjalizację ponownie.
+Sprawdź, czy katalog nie zawiera już `.env`, `postgres-password`, `secrets/postgres-password` albo `release.env`. Jeśli są, masz istniejącą konfigurację — przejdź do aktualizacji sekretu opisanej niżej, zamiast wykonywać inicjalizację ponownie.
 
 Poniższy blok odmawia nadpisania istniejących plików:
 
 ```sh
-if [ -e "$deploy_dir/.env" ] || [ -e "$deploy_dir/postgres-password" ] || [ -e "$deploy_dir/compose.yaml" ]; then
+if [ -e "$deploy_dir/.env" ] || [ -e "$deploy_dir/postgres-password" ] || [ -e "$deploy_dir/secrets/postgres-password" ] || [ -e "$deploy_dir/compose.yaml" ]; then
   printf 'Konfiguracja już istnieje. Sprawdź ją przed dalszymi krokami.\n'
 else
+  mkdir -p "$deploy_dir/secrets"
+  chmod 700 "$deploy_dir/secrets"
   cp compose.yaml "$deploy_dir/compose.yaml"
   cp .env.example "$deploy_dir/.env"
-  (umask 077; openssl rand -hex 32 > "$deploy_dir/postgres-password")
-  chmod 600 "$deploy_dir/.env" "$deploy_dir/postgres-password"
+  (umask 077; openssl rand -hex 32 > "$deploy_dir/secrets/postgres-password")
+  chmod 600 "$deploy_dir/.env"
+  chmod 444 "$deploy_dir/secrets/postgres-password"
 fi
 ```
 
 Sprawdź pliki i konfigurację bez wyświetlania hasła:
 
 ```sh
-ls -l "$deploy_dir/compose.yaml" "$deploy_dir/.env" "$deploy_dir/postgres-password"
+ls -ld "$deploy_dir/secrets"
+ls -l "$deploy_dir/compose.yaml" "$deploy_dir/.env" "$deploy_dir/secrets/postgres-password"
 cat "$deploy_dir/.env"
-test -s "$deploy_dir/postgres-password" && printf 'Plik hasła jest niepusty.\n'
+test -s "$deploy_dir/secrets/postgres-password" && printf 'Plik hasła jest niepusty.\n'
 ```
 
 W `.env` powinno być:
 
 ```dotenv
-POSTGRES_PASSWORD_FILE=./postgres-password
+POSTGRES_PASSWORD_FILE=./secrets/postgres-password
 APP_PORT=8080
 ```
 
 Komentarze z szablonu mogą zostać. `APP_IMAGE` będzie ustawiane przez skrypt i po udanym wdrożeniu zapisane w `release.env`.
 
-Hasło pozostaje na serwerze i jest montowane tylko do PostgreSQL. Po pierwszej inicjalizacji wolumenu nie generuj go ponownie — zmiana pliku nie zmienia hasła istniejącej bazy.
+Hasło pozostaje na serwerze. Jeden plik jest montowany tylko do odczytu do PostgreSQL, app i jednorazowego migratora. Plik ma `0444`, aby użytkownik app bez roota mógł go odczytać; katalog `secrets` musi wcześniej otrzymać `0700`, by inni użytkownicy hosta nie mogli dotrzeć do pliku. `.env` pozostaje `0600`. Nie polegaj na `uid/gid/mode` sekretu Compose o źródle plikowym. Po pierwszej inicjalizacji wolumenu nie generuj hasła ponownie — zmiana pliku nie zmienia hasła istniejącej bazy.
+
+### Aktualizacja sekretu istniejącej instalacji
+
+Jeżeli `.env` wskazuje obecnie `./postgres-password`, zachowaj jego zawartość i przenieś plik do prywatnego katalogu. Ten blok nie tworzy nowego hasła i nie nadpisuje istniejącego celu:
+
+```sh
+mkdir -p "$deploy_dir/secrets"
+chmod 700 "$deploy_dir/secrets"
+if [ -f "$deploy_dir/postgres-password" ] && [ ! -e "$deploy_dir/secrets/postgres-password" ]; then
+  mv "$deploy_dir/postgres-password" "$deploy_dir/secrets/postgres-password"
+  chmod 444 "$deploy_dir/secrets/postgres-password"
+else
+  printf 'Sprawdź istniejącą ścieżkę i plik docelowy; nie generuj nowego hasła.\n'
+fi
+```
+
+Ustaw `POSTGRES_PASSWORD_FILE=./secrets/postgres-password` w dotychczasowym `.env`, zachowując inne ustawienia i tryb `0600`. Jeśli dotychczasowa ścieżka jest niestandardowa, najpierw ustal rzeczywisty plik źródłowy. Zsynchronizuj aktualny Compose zgodnie z procedurą utrzymania z sekcji 19, zachowując projekt i wolumen PostgreSQL. Nie uruchamiaj inicjalizacji bazy od nowa. Kontrolę odczytu w kontenerze wykonasz po pobraniu obrazu w sekcji 10.
 
 ## 9. Pobierz dokładny obraz pierwszego wydania
 
@@ -294,7 +315,26 @@ APP_IMAGE="$release_image" docker compose --project-name pennypath \
 
 **Oczekiwany wynik:** konfiguracja jest poprawna i PostgreSQL osiąga stan healthy. `APP_IMAGE` jest tutaj wymagane do odczytania całego Compose, nawet gdy uruchamiasz tylko bazę.
 
-Uruchom pierwsze wydanie aplikacji:
+Sprawdź odczyt sekretu z UID obrazu app; oczekiwany kod to 0 bez wyświetlania hasła:
+
+```sh
+APP_IMAGE="$release_image" docker compose --project-name pennypath \
+  --env-file "$deploy_dir/.env" -f "$deploy_dir/compose.yaml" \
+  run --rm --no-deps --entrypoint sh app -c \
+  'test "$(id -u)" != 0 && test -r /run/secrets/postgres_password && cat /run/secrets/postgres_password >/dev/null'
+```
+
+Po ręcznym przeglądzie migracji uruchom ją osobno z nowego obrazu. Dla istniejącej bazy najpierw wykonaj i sprawdź kopię z sekcji 17:
+
+```sh
+APP_IMAGE="$release_image" docker compose --project-name pennypath \
+  --env-file "$deploy_dir/.env" -f "$deploy_dir/compose.yaml" \
+  run --rm --no-deps app --migrate
+```
+
+Oczekiwany kod to 0 i potwierdzenie zastosowania migracji; ponowienie jest idempotentne. Proces nie uruchamia serwera HTTP. Przy błędzie nie kontynuuj wydania — sprawdź konfigurację i dostępność bazy. Automatyczny `deploy.sh` otrzyma ten krok dopiero w fazie 4 S-01.
+
+Po sukcesie migracji uruchom pierwsze wydanie aplikacji:
 
 ```sh
 cd "$HOME/Serwer/penny-path/repo"

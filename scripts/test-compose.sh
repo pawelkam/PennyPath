@@ -24,19 +24,28 @@ cleanup() {
     exit "$result"
 }
 cp "$root_dir/compose.yaml" "$DEPLOY_DIR/compose.yaml"
-printf 'POSTGRES_PASSWORD_FILE=./postgres-password\nAPP_PORT=18080\n' > "$DEPLOY_DIR/.env"
-openssl rand -hex 32 > "$DEPLOY_DIR/postgres-password"
-chmod 600 "$DEPLOY_DIR/postgres-password" "$DEPLOY_DIR/.env"
+mkdir "$DEPLOY_DIR/secrets"
+chmod 700 "$DEPLOY_DIR/secrets"
+printf 'POSTGRES_PASSWORD_FILE=./secrets/postgres-password\nAPP_PORT=18080\n' > "$DEPLOY_DIR/.env"
+(umask 077; openssl rand -hex 32 > "$DEPLOY_DIR/secrets/postgres-password")
+chmod 600 "$DEPLOY_DIR/.env"
+chmod 444 "$DEPLOY_DIR/secrets/postgres-password"
 trap cleanup EXIT
 
 compose config --format json > "$DEPLOY_DIR/config.json"
 python3 - "$DEPLOY_DIR/config.json" <<'PY'
 import json, sys
+from pathlib import Path
+from stat import S_IMODE
 config = json.load(open(sys.argv[1]))
 db = config['services']['postgres']
 assert not db.get('ports'), 'Database port must not be published'
 assert db['volumes'][0]['target'] == '/var/lib/postgresql'
 assert all(service['restart'] == 'unless-stopped' for service in config['services'].values())
+secret = Path(config['secrets']['postgres_password']['file'])
+assert S_IMODE(secret.parent.stat().st_mode) == 0o700, 'Secret directory must be private'
+assert S_IMODE(secret.stat().st_mode) == 0o444, 'Secret must be readable by the non-root app'
+assert config['services']['app']['environment']['Database__PasswordFile'] == '/run/secrets/postgres_password'
 PY
 docker run -d --name "$registry_name" -p 127.0.0.1:5000:5000 registry:2
 ready=false
@@ -60,6 +69,9 @@ python3 "$root_dir/scripts/smoke-test.py" http://127.0.0.1:18080
 app_container=$(compose ps -q app)
 [ "$(docker inspect --format '{{.Architecture}}' "$first")" = arm64 ]
 [ "$(docker exec "$app_container" id -u)" != 0 ]
+docker exec "$app_container" sh -c 'test -r /run/secrets/postgres_password && cat /run/secrets/postgres_password >/dev/null'
+compose run --rm --no-deps --entrypoint sh app -c \
+    'test "$(id -u)" != 0 && test -r /run/secrets/postgres_password && cat /run/secrets/postgres_password >/dev/null'
 
 # Keep a sentinel through a database recreation and an app deployment.
 compose exec -T postgres psql -U pennypath -d pennypath -v ON_ERROR_STOP=1 \

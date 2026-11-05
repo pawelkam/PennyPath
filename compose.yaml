@@ -10,6 +10,13 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_HTTP_PORTS: "8080"
+      Database__Host: postgres
+      Database__Port: "5432"
+      Database__Name: pennypath
+      Database__Username: pennypath
+      Database__PasswordFile: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
     depends_on:
       postgres:
         condition: service_healthy

@@ -18,3 +18,5 @@
 !backend/PennyPath.Api/appsettings.json
 !backend/PennyPath.Api/Controllers/
 !backend/PennyPath.Api/Controllers/**
+!backend/PennyPath.Api/Data/
+!backend/PennyPath.Api/Data/**

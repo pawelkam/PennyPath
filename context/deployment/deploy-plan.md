@@ -6,7 +6,7 @@
 
 Jeden obraz `linux/arm64` zawiera build Vue i ASP.NET Core. Aplikacja działa bez roota i udostępnia HTTP na porcie 8080. PostgreSQL 18 działa w osobnym kontenerze z trwałym wolumenem pod `/var/lib/postgresql` oraz healthcheckiem; port bazy pozostaje wewnętrzny. Oba serwisy mają `restart: unless-stopped`.
 
-Na tym etapie wdrażany jest starter i syntetyczne dane kontrolne. Połączenie API z PostgreSQL, migracje, logowanie, wydatki i Cloudflare Tunnel należą do kolejnych etapów. `/health` potwierdza działanie procesu HTTP, a nie gotowość przyszłych funkcji bazy.
+Faza 1 S-01 dodaje magazyn kont Identity, konfigurację połączenia API z PostgreSQL i jednorazowy tryb `--migrate`. Formularze i endpointy logowania, HTTPS w LAN, wydatki i Cloudflare Tunnel powstają w dalszych fazach. `/health` potwierdza działanie procesu HTTP, a nie gotowość schematu kont. Zwykły start aplikacji nie wykonuje migracji; automatyczne włączenie migratora do `deploy.sh` należy do fazy 4 S-01.
 
 ## 1. Pierwsza publikacja
 
@@ -36,20 +36,45 @@ Pobierz `main` do `~/pennypath/repo`. Z katalogu repozytorium wykonaj poniższe 
 deploy_dir="$HOME/pennypath/deploy"
 mkdir -p "$deploy_dir"
 chmod 700 "$deploy_dir"
-cp compose.yaml "$deploy_dir/compose.yaml"
-cp .env.example "$deploy_dir/.env"
-openssl rand -hex 32 > "$deploy_dir/postgres-password"
-chmod 600 "$deploy_dir/.env" "$deploy_dir/postgres-password"
+if [ -e "$deploy_dir/.env" ] || [ -e "$deploy_dir/postgres-password" ] || [ -e "$deploy_dir/secrets/postgres-password" ]; then
+  printf 'Konfiguracja już istnieje. Zachowaj hasło i skorzystaj z aktualizacji sekretu opisanej poniżej.\n'
+else
+  mkdir -p "$deploy_dir/secrets"
+  chmod 700 "$deploy_dir/secrets"
+  cp compose.yaml "$deploy_dir/compose.yaml"
+  cp .env.example "$deploy_dir/.env"
+  (umask 077; openssl rand -hex 32 > "$deploy_dir/secrets/postgres-password")
+  chmod 600 "$deploy_dir/.env"
+  chmod 444 "$deploy_dir/secrets/postgres-password"
+fi
 
 release_image='ghcr.io/pawelkam/pennypath@sha256:<64-znakowy-digest>'
 APP_IMAGE="$release_image" docker compose --project-name pennypath \
   --env-file "$deploy_dir/.env" -f "$deploy_dir/compose.yaml" \
   up -d --wait --wait-timeout 120 postgres
+APP_IMAGE="$release_image" docker compose --project-name pennypath \
+  --env-file "$deploy_dir/.env" -f "$deploy_dir/compose.yaml" \
+  run --rm --no-deps app --migrate
 bash scripts/deploy.sh "$release_image"
 python3 scripts/smoke-test.py http://127.0.0.1:8080
 ```
 
-Nie generuj ponownie hasła przy kolejnych wdrożeniach. PostgreSQL ustawia je przy pierwszej inicjalizacji wolumenu; zmiana pliku nie zmienia hasła istniejącej bazy. Sekret jest montowany tylko do PostgreSQL i nie trafia do obrazu, konfiguracji frontendowej ani repozytorium.
+Komendy inicjalizacji i pierwszego wydania są przeznaczone dla nowej instalacji. Nie generuj ponownie hasła przy kolejnych wdrożeniach. PostgreSQL ustawia je przy pierwszej inicjalizacji wolumenu; zmiana pliku nie zmienia hasła istniejącej bazy. Ten sam plik jest montowany tylko do odczytu do PostgreSQL, app i jednorazowego migratora. Sekret nie trafia do obrazu, konfiguracji frontendowej ani repozytorium.
+
+Plik `secrets/postgres-password` ma `0444`, dzięki czemu odczyta go użytkownik kontenera app bez roota. Na hoście chroni go prywatny katalog `secrets` z `0700`; najpierw zabezpiecz katalog, dopiero potem nadaj plikowi `0444`. `.env` pozostaje `0600`. Samo `uid/gid/mode` w konfiguracji sekretu Compose o źródle plikowym nie remapuje uprawnień bind mountu.
+
+**Istniejąca instalacja z `./postgres-password`:** zachowaj zawartość pliku i wolumen bazy. W trwałym katalogu utwórz `secrets` z `0700`, przenieś istniejący plik do `secrets/postgres-password` bez nadpisania innego sekretu i ustaw mu `0444`. Zmień wyłącznie ścieżkę `POSTGRES_PASSWORD_FILE` w istniejącym `.env` na `./secrets/postgres-password` (pozostałe ustawienia zachowaj). Zsynchronizuj nowy Compose zgodnie z procedurą utrzymania. Dla niestandardowej starej ścieżki najpierw ustal faktyczne źródło pliku. Nie inicjalizuj ponownie bazy ani nie zmieniaj hasła przez wygenerowanie nowego pliku.
+
+Po pobraniu obrazu i przygotowaniu konfiguracji sprawdź odczyt z użytkownikiem rzeczywistego obrazu, bez wyświetlania sekretu:
+
+```sh
+APP_IMAGE="$release_image" docker compose --project-name pennypath \
+  --env-file "$deploy_dir/.env" -f "$deploy_dir/compose.yaml" \
+  run --rm --no-deps --entrypoint sh app -c \
+  'test "$(id -u)" != 0 && test -r /run/secrets/postgres_password && cat /run/secrets/postgres_password >/dev/null'
+```
+
+Oczekiwany kod to 0 bez zawartości pliku na ekranie. `--migrate` stosuje wyłącznie oczekujące migracje i kończy się kodem 0; błąd daje kod niezerowy bez szczegółów poświadczeń. Nie kontynuuj ręcznego wydania po błędzie migracji. Przed migracją istniejącej bazy wykonaj i sprawdź kopię z sekcji 6.
 
 `release.env` zapisuje `APP_IMAGE` i `PREVIOUS_IMAGE`. Skrypt zapisuje je atomowo dopiero po pozytywnym healthchecku. Przy pierwszym wydaniu poprzedni digest jest pusty. Kolejne operacje Compose uruchamiaj w trwałym katalogu:
 
