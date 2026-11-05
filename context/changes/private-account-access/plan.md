@@ -405,11 +405,11 @@ CA i Data Protection keys wymagają kopii/ochrony jak inne sekrety; prywatny klu
 
 #### Automated
 
-- [x] 3.1 Testy UI i routingu przechodzą: `npm --prefix frontend run test:unit -- --run`.
-- [x] 3.2 Kontrola typów aplikacji i testów przechodzi: `npm --prefix frontend run type-check`.
-- [x] 3.3 Produkcjny build Vue przechodzi: `npm --prefix frontend run build`.
-- [x] 3.4 Testy backendu nadal przechodzą: `dotnet test backend/PennyPath.slnx`.
-- [x] 3.5 Zmiany nie zawierają błędów whitespace: `git diff --check`.
+- [x] 3.1 Testy UI i routingu przechodzą: `npm --prefix frontend run test:unit -- --run`. — bcdcab7
+- [x] 3.2 Kontrola typów aplikacji i testów przechodzi: `npm --prefix frontend run type-check`. — bcdcab7
+- [x] 3.3 Produkcjny build Vue przechodzi: `npm --prefix frontend run build`. — bcdcab7
+- [x] 3.4 Testy backendu nadal przechodzą: `dotnet test backend/PennyPath.slnx`. — bcdcab7
+- [x] 3.5 Zmiany nie zawierają błędów whitespace: `git diff --check`. — bcdcab7
 
 #### Manual
 
