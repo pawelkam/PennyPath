@@ -842,6 +842,8 @@ DEPLOY_DIR="$deploy_dir" bash "$repo_dir/scripts/deploy.sh" "$release_image"
 
 Oczekiwany wynik: `Deployed ...`; dotychczasowy kontener PostgreSQL pozostaje uruchomiony. Aktualny skrypt sam uruchamia idempotentne `--migrate` z nowego obrazu **przed** wymianą app. Błąd migracji zachowuje poprzedni app i release.env; przerwij procedurę i sprawdź konfigurację, zamiast inicjalizować bazę ponownie. Zwykły start API nie migruje.
 
+Jeśli starszy skrypt zgłasza `no such object` i wypisuje dwa ID w kolejnych liniach, sprawdź pozostałe kontenery jednorazowe według 21.9. Zaktualizowany `deploy.sh` wybiera zwykły kontener usługi po etykietach projektu i serwisu, pomijając kontenery `run` także podczas kontroli zdrowia.
+
 Sprawdź zachowanie bazy, odczyt sekretu i prawa katalogu kluczy:
 
 ```sh
@@ -918,3 +920,32 @@ docker network inspect pennypath_edge --format '{{json .IPAM.Config}}'
 ```
 
 Oczekiwane: IPRange to `172.30.90.128/25` (albo własna skonfigurowana pula), app nie używa PROXY_IP, a proxy startuje pod swoim stałym adresem. Potwierdź HTTPS i istniejące konta/sesję według 21.6, potem przywróć DEPLOY_ENABLED. Ta operacja zachowuje bazę, hasło, release.env, app_keys i CA; nie stosuj `down --volumes`.
+
+### 21.9. Usuń pozostawiony kontener jednorazowy po nieudanej próbie
+
+Starszy `deploy.sh` używał `compose ps --all -q app`, które zwraca także kontenery `app-run-*`. Gdy obok właściwego `app-1` pozostał migrator, skrypt przekazywał kilka ID jako jeden argument do `docker inspect`. Wynik to `no such object` z ID w kolejnych liniach, mimo że kontenery istnieją. Poprawiony skrypt filtruje `com.docker.compose.oneoff=False` i przerywa z czytelnym komunikatem, jeśli znajdzie kilka zwykłych kontenerów tej samej usługi.
+
+Wstrzymaj wydania jak w 21.1 i poczekaj na zakończenie aktywnych zadań. Wyświetl kontenery; przy własnej nazwie projektu zmień filtr:
+
+```sh
+docker ps -a --no-trunc --filter label=com.docker.compose.project=pennypath \
+  --format '{{.ID}} {{.Names}} {{.Status}}'
+```
+
+Jeśli pozostał `pennypath-app-run-*`, sprawdź jego etykietę i polecenie. Wstaw ID tego jednorazowego kontenera, zachowując właściwy `pennypath-app-1`:
+
+```sh
+oneoff_container='<ID pozostawionego kontenera app-run>'
+docker inspect --format '{{.Name}} oneoff={{index .Config.Labels "com.docker.compose.oneoff"}} cmd={{json .Config.Cmd}}' "$oneoff_container"
+```
+
+Po potwierdzeniu `oneoff=True` i ustaleniu, że jest to pozostałość zakończonej próby, zatrzymaj wyłącznie ten kontener. Usuń go dopiero po sukcesie zatrzymania, bez opcji usuwania wolumenów:
+
+```sh
+docker stop "$oneoff_container"
+docker rm "$oneoff_container"
+```
+
+Ponów 21.4 z aktualnym skryptem i właściwym digestem. `release.env` i nazwane wolumeny pozostają zachowane. Nie inicjalizuj ponownie bazy.
+
+Wyjątek `Configure an existing private DataProtection:KeysPath directory` oznacza brak ustawienia `DataProtection__KeysPath` lub brak wskazanego katalogu dostępnego w danym kontenerze. Kontener utworzony przed synchronizacją Compose zachowuje dawne zmienne i montowania. Nowy migrator musi pochodzić z obrazu HTTPS i używać konfiguracji z 21.3: `DataProtection__KeysPath=/var/lib/pennypath/keys` oraz wolumenu `app_keys` pod tą ścieżką. Jeżeli błąd wystąpi także w nowo utworzonym kontenerze, sprawdź jego konfigurację i montowania; zatrzymaj procedurę przed wymianą app.

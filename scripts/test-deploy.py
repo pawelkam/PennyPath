@@ -26,7 +26,10 @@ if a[0] == "compose":
     a = a[a.index("compose.yaml") + 1:]
     if a[0] == "ps":
         output = "db" if a[-1] == "postgres" and s.get("db_healthy", True) else ""
-        if a[-1] == "app" and s.get("image"): output = "app"
+        if a[-1] == "app":
+            ids = (["app"] if s.get("image") else []) + s.get("extra_apps", [])
+            if "--all" in a: ids += s.get("oneoffs", [])
+            output = "\n".join(ids)
     elif a[0] == "up":
         assert a[-1] == "app" and "--no-deps" in a and "--pull" in a
         s["image"] = image
@@ -36,10 +39,29 @@ if a[0] == "compose":
         if image == s.get("migrate_fail"): result = 1
     elif a[0] == "port": output = "0.0.0.0:8080"
     elif a[0] == "stop": s["image"] = ""
+elif a[0] == "ps":
+    containers = []
+    def add_container(identifier, service, oneoff="False", project=None):
+        containers.append((identifier, {
+            "com.docker.compose.project": project or os.environ.get("COMPOSE_PROJECT_NAME", "pennypath"),
+            "com.docker.compose.service": service,
+            "com.docker.compose.oneoff": oneoff,
+        }))
+    if s.get("image"): add_container("app", "app")
+    if s.get("db_healthy", True): add_container("db", "postgres")
+    for identifier in s.get("extra_apps", []): add_container(identifier, "app")
+    for identifier in s.get("oneoffs", []): add_container(identifier, "app", "True")
+    add_container("other-project-app", "app", project="unrelated-project")
+    filters = [a[i + 1].removeprefix("label=").split("=", 1) for i, value in enumerate(a) if value == "--filter"]
+    output = "\n".join(identifier for identifier, labels in containers
+                       if all(labels.get(key) == value for key, value in filters))
 elif a[0] == "pull":
     if a[-1] == s.get("pull_fail"): result = 1
 elif a[0] == "inspect":
-    if "Config.Image" in a[2]: output = s.get("image", "")
+    if a[-1] not in ("app", "db"):
+        result = 1
+        print("error: no such object: " + a[-1], file=sys.stderr)
+    elif "Config.Image" in a[2]: output = s.get("image", "")
     elif a[-1] == "db": output = "healthy"
     else: output = "unhealthy" if s.get("image") == s.get("unhealthy") else "healthy"
 elif a[:2] == ["image", "inspect"]:
@@ -98,6 +120,26 @@ class DeploymentTest(unittest.TestCase):
         self.assertLess(pull, migration)
         self.assertLess(migration, replacement)
         self.assertEqual((self.directory / "release.env").read_text(), f"APP_IMAGE={NEW}\nPREVIOUS_IMAGE={OLD}\n")
+
+    def test_leftover_oneoff_containers_do_not_block_deployment(self):
+        self.configure(oneoffs=["unhealthy-running-migrator", "stopped-migrator", "created-migrator"])
+        self.env["COMPOSE_PROJECT_NAME"] = "custom-pennypath"
+        data = self.run_deploy()
+        self.assertEqual(data["image"], NEW)
+        self.assertEqual({call[-1] for call in data["calls"] if call[0] == "inspect"}, {"app", "db"})
+
+    def test_first_deployment_ignores_leftover_oneoff_without_app(self):
+        (self.directory / "release.env").unlink()
+        self.configure(image="", oneoffs=["stopped-migrator"])
+        self.assertEqual(self.run_deploy()["image"], NEW)
+
+    def test_multiple_service_containers_are_rejected_before_pull(self):
+        before = (self.directory / "release.env").read_bytes()
+        self.configure(extra_apps=["duplicate-app"])
+        data = self.run_deploy(success=False)
+        self.assertFalse(any(call[0] == "pull" or "up" in call for call in data["calls"]))
+        self.assertFalse(any(call[0] == "inspect" for call in data["calls"]))
+        self.assertEqual((self.directory / "release.env").read_bytes(), before)
 
     def test_pull_failure_keeps_running_app_and_state(self):
         self.configure(pull_fail=NEW)

@@ -38,6 +38,7 @@ cleanup() {
     result=$?
     trap - EXIT
     if [ "$result" -ne 0 ]; then compose logs --tail 80 || true; fi
+    if [ -n "${leftover_container:-}" ]; then docker container rm -f "$leftover_container" || true; fi
     compose down --volumes || true
     docker container rm -f "$registry_name" || true
     # Temporary state intentionally remains available for inspecting CI failures.
@@ -103,6 +104,13 @@ compose up -d --wait --wait-timeout 120 postgres
 bash "$root_dir/scripts/deploy.sh" "$first"
 # Repeat the real PostgreSQL migrator to prove idempotence.
 compose run --rm --no-deps --pull never app --migrate
+# A leftover one-off must not be mistaken for the long-running app container.
+leftover_container=$(compose run -d --no-deps --pull never --entrypoint sh app -c 'exit 0')
+[ "$(docker wait "$leftover_container")" = 0 ]
+[ "$(docker inspect --format '{{index .Config.Labels "com.docker.compose.oneoff"}}' "$leftover_container")" = True ]
+bash "$root_dir/scripts/deploy.sh" "$first"
+docker container rm "$leftover_container"
+leftover_container=''
 # The app starts before Caddy: its dynamic address must not consume PROXY_IP.
 app_container=$(compose ps -q app)
 docker inspect "$app_container" > "$DEPLOY_DIR/app-network.json"

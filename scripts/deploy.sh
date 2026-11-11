@@ -54,11 +54,27 @@ compose() {
         --env-file .env -f compose.yaml "$@"
 }
 
+service_container() {
+    local service=$1 containers
+    # Compose ps --all includes one-off `run` containers such as old migrators.
+    containers=$(docker ps --all --quiet --no-trunc \
+        --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-pennypath}" \
+        --filter "label=com.docker.compose.service=$service" \
+        --filter 'label=com.docker.compose.oneoff=False') || return 1
+    case "$containers" in
+        *$'\n'*)
+            echo "Multiple service containers found for $service; reconcile them before deploying" >&2
+            return 1
+            ;;
+    esac
+    printf '%s' "$containers"
+}
+
 wait_healthy() {
     local expected=$1 container status image address port code deadline
     deadline=$((SECONDS + health_timeout))
     while [ "$SECONDS" -lt "$deadline" ]; do
-        container=$(compose ps --all -q app) || return 1
+        container=$(service_container app) || return 1
         if [ -n "$container" ]; then
             status=$(docker inspect --format '{{.State.Health.Status}}' "$container" 2>/dev/null) || status=unknown
             image=$(docker inspect --format '{{.Config.Image}}' "$container" 2>/dev/null) || image=unknown
@@ -121,7 +137,7 @@ export APP_IMAGE=$requested
 compose config --quiet
 
 # Reject untracked/manual changes so a rollback cannot silently choose the wrong image.
-container=$(compose ps --all -q app)
+container=$(service_container app)
 if [ -n "$container" ]; then
     actual=$(docker inspect --format '{{.Config.Image}}' "$container")
     if [ -z "$current" ] || [ "$actual" != "$current" ]; then
@@ -129,7 +145,7 @@ if [ -n "$container" ]; then
         exit 1
     fi
 fi
-database=$(compose ps -q postgres)
+database=$(service_container postgres)
 if [ -z "$database" ] || [ "$(docker inspect --format '{{.State.Health.Status}}' "$database")" != healthy ]; then
     echo "Start a healthy PostgreSQL service before deploying" >&2
     exit 1
