@@ -1,7 +1,7 @@
 ---
 change_id: private-account-access
 title: Private account access
-status: implementing
+status: implemented
 created: 2026-11-05
 updated: 2026-11-11
 archived_at: null
