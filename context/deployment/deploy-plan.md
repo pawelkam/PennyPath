@@ -8,7 +8,7 @@ Jeden obraz `linux/arm64` zawiera Vue i ASP.NET Core. Proces app/migratora dzia�
 
 Przeglądarka używa wspólnego originu `https://<LAN_HOST>:8443` (domyślny port). HTTP app jest publikowane tylko na `127.0.0.1:${APP_PORT:-8080}` do kontroli zdrowia. `LAN_HOST` to stały IP lub nazwa osiągalna na urządzeniach, bez protokołu, portu ani ścieżki. `localhost` w szablonie służy wyłącznie lokalnemu uruchomieniu.
 
-App należy do sieci bazy i osobnej `edge`. Proxy jest wyłącznie na `edge`: `EDGE_SUBNET=172.30.90.0/24`, `PROXY_IP=172.30.90.2`. Sprawdź istniejące sieci Dockera przed konfiguracją; przy konflikcie dobierz i ustaw obie wartości razem. App przetwarza Forwarded-For/Proto wyłącznie od tego dokładnego IP, przed auth i CSRF. Caddy nadpisuje nagłówki otrzymane od klienta.
+App należy do sieci bazy i osobnej `edge`: `EDGE_SUBNET=172.30.90.0/24`. App i migrator otrzymują adresy z puli `EDGE_IP_RANGE=172.30.90.128/25`; statyczny adres proxy `PROXY_IP=172.30.90.2` jest poza nią. Dzięki temu app uruchomiony przed Caddy nie zajmuje jego IP. Sprawdź istniejące sieci Dockera przed konfiguracją; przy konflikcie dobierz wszystkie trzy ustawienia razem. Pula dynamiczna musi być częścią EDGE_SUBNET i nie może obejmować PROXY_IP. App przetwarza Forwarded-For/Proto wyłącznie od tego dokładnego IP, przed auth i CSRF. Caddy nadpisuje nagłówki otrzymane od klienta.
 
 Zachowuj nazwę projektu `pennypath` i wolumeny:
 
@@ -60,7 +60,7 @@ cp compose.yaml "$deploy_dir/compose.yaml"
 cp deploy/Caddyfile "$deploy_dir/deploy/Caddyfile"
 ```
 
-Edytuj zachowany `.env`: `POSTGRES_PASSWORD_FILE`, `LAN_HOST`, `HTTPS_PORT` (8443), `APP_PORT` (8080, tylko loopback), `EDGE_SUBNET`, `PROXY_IP`. `APP_IMAGE` dostarcza skrypt. Nie przechowuj sekretów w `VITE_*`, CLI, repozytorium lub obrazie.
+Edytuj zachowany `.env`: `POSTGRES_PASSWORD_FILE`, `LAN_HOST`, `HTTPS_PORT` (8443), `APP_PORT` (8080, tylko loopback), `EDGE_SUBNET`, `EDGE_IP_RANGE`, `PROXY_IP`. `APP_IMAGE` dostarcza skrypt. Nie przechowuj sekretów w `VITE_*`, CLI, repozytorium lub obrazie. Jeśli sieć edge została już utworzona bez puli dynamicznej, zastosuj procedurę jej wymiany z sekcji 21.8 instrukcji Maca M1; sama edycja `.env` nie zmienia istniejącego IPAM.
 
 ## 3. Pierwsze wydanie HTTPS i zaufanie CA
 
@@ -146,6 +146,6 @@ docker build --platform linux/arm64 -t pennypath:ci .
 bash scripts/test-compose.sh
 ```
 
-Test wymaga wolnych portów 5000/18080/18443 i podsieci `172.30.91.0/24` (`PROXY_IP=172.30.91.2`). Wykrywa overlap przed tworzeniem zasobów i nigdy nie zmienia istniejących sieci. Używa własnego projektu/bazy/registry, pliku sekretu 0444 w katalogu 0700 i ulotnej sesji 0600. Sprawdza prawdziwy odczyt sekretu przez non-root app/migrator, prywatny katalog kluczy, migrację i idempotencję, HTTPS z root CA bez obejść, A/B, CSRF, to samo ID po restartach/update/rollback, trwałość bazy i CA, failed pull, failed migration oraz rollback po healthchecku. Sprzątanie usuwa tylko własny projekt i registry; artefakty testu zostają w prywatnym katalogu tymczasowym do diagnostyki.
+Test wymaga wolnych portów 5000/18080/18443 i podsieci `172.30.91.0/24` (`EDGE_IP_RANGE=172.30.91.128/25`, `PROXY_IP=172.30.91.2`). Wykrywa overlap przed tworzeniem zasobów i nigdy nie zmienia istniejących sieci. Sprawdza rzeczywisty adres app przed startem proxy, aby wykryć zajęcie statycznego IP przez pulę dynamiczną. Używa własnego projektu/bazy/registry, pliku sekretu 0444 w katalogu 0700 i ulotnej sesji 0600. Sprawdza prawdziwy odczyt sekretu przez non-root app/migrator, prywatny katalog kluczy, migrację i idempotencję, HTTPS z root CA bez obejść, A/B, CSRF, to samo ID po restartach/update/rollback, trwałość bazy i CA, failed pull, failed migration oraz rollback po healthchecku. Sprzątanie usuwa tylko własny projekt i registry; artefakty testu zostają w prywatnym katalogu tymczasowym do diagnostyki.
 
 Brak Dockera pozostawia te kontrole oczekujące, również prawa mountów. Lokalna kompilacja lub SQLite nie zastępują wyników PostgreSQL/HTTPS/obrazu. Ręczny odbiór obejmuje ponadto mobile/desktop, klawiaturę i brak prywatnego renderowania przed potwierdzeniem sesji (oczekujące 3.6), dwa urządzenia/konteksty i poprawny trust CA (4.8), zachowaną bazę/sekret, kolejność migracji i trwałe klucze/CA (4.9). Sprawdź też restart Maca po zalogowaniu, start OrbStack/runnera i dostęp HTTPS z LAN.

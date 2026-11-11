@@ -7,7 +7,7 @@ docker info >/dev/null
 docker compose version >/dev/null
 root_dir=$(cd "$(dirname "$0")/.." && pwd)
 export LAN_HOST=localhost APP_PORT=18080 HTTPS_PORT=18443
-export EDGE_SUBNET=172.30.91.0/24 PROXY_IP=172.30.91.2
+export EDGE_SUBNET=172.30.91.0/24 EDGE_IP_RANGE=172.30.91.128/25 PROXY_IP=172.30.91.2
 # Project names do not isolate IPAM pools. Fail before creating any resources.
 python3 - "$EDGE_SUBNET" <<'PY'
 import ipaddress, json, subprocess, sys
@@ -48,7 +48,7 @@ mkdir "$DEPLOY_DIR/deploy"
 cp "$root_dir/deploy/Caddyfile" "$DEPLOY_DIR/deploy/Caddyfile"
 mkdir "$DEPLOY_DIR/secrets"
 chmod 700 "$DEPLOY_DIR/secrets"
-printf 'POSTGRES_PASSWORD_FILE=./secrets/postgres-password\nAPP_PORT=18080\nLAN_HOST=localhost\nHTTPS_PORT=18443\nEDGE_SUBNET=172.30.91.0/24\nPROXY_IP=172.30.91.2\n' > "$DEPLOY_DIR/.env"
+printf 'POSTGRES_PASSWORD_FILE=./secrets/postgres-password\nAPP_PORT=18080\nLAN_HOST=localhost\nHTTPS_PORT=18443\nEDGE_SUBNET=172.30.91.0/24\nEDGE_IP_RANGE=172.30.91.128/25\nPROXY_IP=172.30.91.2\n' > "$DEPLOY_DIR/.env"
 (umask 077; openssl rand -hex 32 > "$DEPLOY_DIR/secrets/postgres-password")
 chmod 600 "$DEPLOY_DIR/.env"
 chmod 444 "$DEPLOY_DIR/secrets/postgres-password"
@@ -56,7 +56,7 @@ trap cleanup EXIT
 
 compose config --format json > "$DEPLOY_DIR/config.json"
 python3 - "$DEPLOY_DIR/config.json" <<'PY'
-import json, sys
+import ipaddress, json, sys
 from pathlib import Path
 from stat import S_IMODE
 config = json.load(open(sys.argv[1]))
@@ -75,6 +75,11 @@ assert app['environment']['Proxy__KnownProxy'] == '172.30.91.2'
 assert app['environment']['DataProtection__KeysPath'] == '/var/lib/pennypath/keys'
 assert proxy['networks']['edge']['ipv4_address'] == '172.30.91.2'
 assert config['networks']['edge']['ipam']['config'][0]['subnet'] == '172.30.91.0/24'
+edge_pool = config['networks']['edge']['ipam']['config'][0]
+dynamic_range = ipaddress.ip_network(edge_pool['ip_range'])
+assert str(dynamic_range) == '172.30.91.128/25'
+assert dynamic_range.subnet_of(ipaddress.ip_network(edge_pool['subnet']))
+assert ipaddress.ip_address(proxy['networks']['edge']['ipv4_address']) not in dynamic_range, 'Proxy IP must be excluded from dynamic allocation'
 assert 'default' not in proxy['networks'], 'Proxy must not join the database network'
 assert {mount['target'] for mount in proxy['volumes']} == {'/data', '/config', '/etc/caddy/Caddyfile'}
 PY
@@ -98,6 +103,18 @@ compose up -d --wait --wait-timeout 120 postgres
 bash "$root_dir/scripts/deploy.sh" "$first"
 # Repeat the real PostgreSQL migrator to prove idempotence.
 compose run --rm --no-deps --pull never app --migrate
+# The app starts before Caddy: its dynamic address must not consume PROXY_IP.
+app_container=$(compose ps -q app)
+docker inspect "$app_container" > "$DEPLOY_DIR/app-network.json"
+python3 - "$DEPLOY_DIR/app-network.json" <<'PY'
+import ipaddress, json, os, sys
+container = json.load(open(sys.argv[1]))[0]
+network = container['NetworkSettings']['Networks'][os.environ['COMPOSE_PROJECT_NAME'] + '_edge']
+address = ipaddress.ip_address(network['IPAddress'])
+assert address != ipaddress.ip_address(os.environ['PROXY_IP']), 'App consumed the reserved proxy IP before Caddy started'
+assert address in ipaddress.ip_network(os.environ['EDGE_IP_RANGE']), 'App address is outside the dynamic range'
+print('App started before Caddy without consuming its static IP')
+PY
 compose up -d --no-deps proxy
 ca_cert="$DEPLOY_DIR/proxy-root.crt"
 ready=false

@@ -27,7 +27,7 @@ python3 scripts/test-auth.py https://localhost:8443 --ca-cert /tmp/pennypath-roo
 
 Otwórz `https://localhost:8443` po zaufaniu wyeksportowanemu root CA w przeglądarce/systemie. Dla drugiego urządzenia ustaw w `.env` `LAN_HOST` na stały adres IP lub nazwę serwera, odtwórz `proxy` i zaufaj temu samemu CA na urządzeniu. Nie omijaj ostrzeżeń certyfikatu. Eksportuj wyłącznie `root.crt`; klucze prywatne CA pozostają na serwerze.
 
-`HTTPS_PORT` domyślnie wynosi 8443; `APP_PORT=8080` publikuje HTTP tylko na `127.0.0.1` do kontroli zdrowia. PostgreSQL nie publikuje portu. `EDGE_SUBNET` / `PROXY_IP` domyślnie wynoszą `172.30.90.0/24` / `172.30.90.2`; zmieniaj je razem przy konflikcie sieci. Aplikacja ufa nagłówkom Forwarded-For/Proto wyłącznie od tego IP. Wolumeny `postgres_data`, `app_keys`, `proxy_data`, `proxy_config` zachowują bazę, klucze sesji i CA. Zwykły `down` je zachowuje; `down --volumes` usuwa dane.
+`HTTPS_PORT` domyślnie wynosi 8443; `APP_PORT=8080` publikuje HTTP tylko na `127.0.0.1` do kontroli zdrowia. PostgreSQL nie publikuje portu. Sieć `EDGE_SUBNET=172.30.90.0/24` ma osobną pulę dynamiczną `EDGE_IP_RANGE=172.30.90.128/25` dla app/migratora; stały `PROXY_IP=172.30.90.2` pozostaje poza tą pulą, aby Docker nie przydzielił go wcześniej aplikacji. Przy konflikcie sieci zmieniaj wszystkie trzy ustawienia razem. Aplikacja ufa nagłówkom Forwarded-For/Proto wyłącznie od tego IP. Wolumeny `postgres_data`, `app_keys`, `proxy_data`, `proxy_config` zachowują bazę, klucze sesji i CA. Zwykły `down` je zachowuje; `down --volumes` usuwa dane.
 
 ## Build i testy bez Dockera
 

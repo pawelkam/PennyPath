@@ -802,10 +802,11 @@ Otwórz **dotychczasowy** `$deploy_dir/.env`. Dopisz poniższe pola lub uaktualn
 LAN_HOST=192.168.1.50
 HTTPS_PORT=8443
 EDGE_SUBNET=172.30.90.0/24
+EDGE_IP_RANGE=172.30.90.128/25
 PROXY_IP=172.30.90.2
 ```
 
-Zachowaj `POSTGRES_PASSWORD_FILE`, `APP_PORT` i inne ustawienia. Nie zastępuj tego pliku przez `.env.example`. LAN_HOST to sam IP lub hostname, bez `https://`, portu i ścieżki. Przed użyciem podsieci sprawdź `docker network ls` i pule w `docker network inspect <nazwa>`; jeśli `172.30.90.0/24` koliduje z istniejącą siecią, dobierz wolną podsieć i zmień **razem** EDGE_SUBNET/PROXY_IP. Nie usuwaj istniejących sieci.
+Zachowaj `POSTGRES_PASSWORD_FILE`, `APP_PORT` i inne ustawienia. Nie zastępuj tego pliku przez `.env.example`. LAN_HOST to sam IP lub hostname, bez `https://`, portu i ścieżki. Przed użyciem podsieci sprawdź `docker network ls` i pule w `docker network inspect <nazwa>`; jeśli `172.30.90.0/24` koliduje z istniejącą siecią, dobierz wolną podsieć i zmień **razem** EDGE_SUBNET/EDGE_IP_RANGE/PROXY_IP. Pula EDGE_IP_RANGE musi mieścić się w EDGE_SUBNET i pozostawiać PROXY_IP poza sobą. Zapobiega to przydzieleniu adresu Caddy aplikacji lub migratorowi. Przy już istniejącej sieci edge bez tego ograniczenia wykonaj sekcję 21.8; pozostałe sieci zachowaj.
 
 ```sh
 chmod 600 "$deploy_dir/.env"
@@ -886,3 +887,34 @@ Jeśli HTTPS działa tylko na serwerze, sprawdź zgodność LAN_HOST z adresem c
 Po udanym odbiorze przywróć `DEPLOY_ENABLED=true`. Kolejne wydania używają istniejącego runnera i projektu, migrują z nowego obrazu i wymieniają wyłącznie app. Ręczny `deploy.sh rollback` pomija migrator starszego obrazu i zachowuje bazę, klucze oraz CA; schemat nie jest cofany. Dla niestandardowego deploy_dir zapewnij ten sam DEPLOY_DIR w środowisku kroku deploy workflow.
 
 Wynik tej aktualizacji: dotychczasowa aplikacja jest dostępna w LAN przez HTTPS, lokalny HTTP służy kontroli zdrowia, a baza/sekret i historia wdrożeń są zachowane. Nie powtarzasz instalacji OrbStack, rejestracji runnera, tworzenia bazy ani pierwszej konfiguracji GitHub z punktów 1–20.
+
+### 21.8. Usuń kolizję adresu Caddy w istniejącej sieci edge
+
+Dotyczy sieci utworzonej wcześniejszą konfiguracją bez `ip_range`, gdy Caddy kończy start błędem `failed to set up container networking: Address already in use`. App lub migrator mógł dostać statyczny adres przeznaczony dla proxy. Poprawiony Compose wydziela `EDGE_IP_RANGE=172.30.90.128/25` dla adresów dynamicznych, pozostawiając `PROXY_IP=172.30.90.2` poza tą pulą. Przy własnej podsieci dostosuj wszystkie trzy ustawienia z sekcji 21.2.
+
+W CI każdy test ma świeżą sieć: wystarczy uruchomić pipeline z poprawionym Compose. Komunikat PostgreSQL o braku `__EFMigrationsHistory` przy pierwszym odczycie pustej bazy może wystąpić przed sukcesem migracji; nie twórz ręcznie tej tabeli jako naprawy kolizji sieci.
+
+**Na działającym serwerze** zmiana IPAM wymaga ponownego utworzenia samej sieci edge i krótkiej przerwy app/proxy. Wyłącz DEPLOY_ENABLED, poczekaj na koniec wydań i zachowaj konfigurację jak w 21.1. Zsynchronizuj poprawiony Compose oraz ustaw EDGE_IP_RANGE w istniejącym `.env`. Użyj `pp_compose` i `deploy_dir` z 21.1; poniższe nazwy zakładają dotychczasowy projekt `pennypath`.
+
+```sh
+pp_compose config --quiet
+docker network inspect pennypath_edge --format '{{json .IPAM.Config}}'
+```
+
+Jeśli IPRange jest już zgodne z nową konfiguracją, wymiana sieci nie jest potrzebna. W przeciwnym razie zatrzymaj i usuń kontenery app/proxy oraz ich sieć edge; PostgreSQL i nazwane wolumeny pozostają:
+
+```sh
+pp_compose stop app proxy
+pp_compose rm -f app proxy
+docker network rm pennypath_edge
+```
+
+Wykonuj kolejne komendy tylko po sukcesie poprzedniej. Jeśli usunięcie sieci zgłasza aktywne endpointy, sprawdź je przez `docker network inspect pennypath_edge` i ustal, czy nie działa migrator; nie odłączaj obcych kontenerów. Po udanej wymianie uruchom app z zachowanego release.env, następnie proxy:
+
+```sh
+pp_compose up -d --no-deps --wait --wait-timeout 120 app
+pp_compose up -d --no-deps proxy
+docker network inspect pennypath_edge --format '{{json .IPAM.Config}}'
+```
+
+Oczekiwane: IPRange to `172.30.90.128/25` (albo własna skonfigurowana pula), app nie używa PROXY_IP, a proxy startuje pod swoim stałym adresem. Potwierdź HTTPS i istniejące konta/sesję według 21.6, potem przywróć DEPLOY_ENABLED. Ta operacja zachowuje bazę, hasło, release.env, app_keys i CA; nie stosuj `down --volumes`.
