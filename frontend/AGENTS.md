@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-This guide covers PennyPath's `frontend/` package, currently a Vue 3, TypeScript, and Vite scaffold. Paths below are relative to this directory.
+This guide covers PennyPath's `frontend/` package, a Vue 3, TypeScript, Vite and Vue Router application. Paths below are relative to this directory.
 
 ## Build, Test, and Development Commands
 
@@ -12,10 +12,13 @@ Run commands from `frontend/`. Use a Node.js version satisfying `engines.node` i
 - `npm run build`: run type checking and the production build in parallel, producing `dist/`.
 - `npm run build-only`: build without type checking; use the full build for validation.
 - `npm run preview`: serve an existing production build locally.
+- `npm run test:unit -- --run`: run Vitest / Vue Test Utils in jsdom.
 
 ## Project Structure & Module Organization
 
-- `src/main.ts` imports global CSS and mounts `src/App.vue`, the root component.
+- `src/main.ts` imports global CSS, installs the router and mounts `src/App.vue`.
+- `src/views/` contains login, registration and the private account page; `src/router/` validates private return URLs.
+- `src/api/auth.ts` manages relative same-origin requests/CSRF; `src/auth/session.ts` keeps session state in memory.
 - `src/components/` contains Vue components; `src/components/icons/` contains SVG icon components.
 - `src/assets/` holds imported assets and global styles. `base.css` defines theme variables; `main.css` imports it and styles the application layout.
 - `public/` holds static assets such as `favicon.ico`.
@@ -29,12 +32,14 @@ Match existing two-space indentation, single-quoted TypeScript strings, and omit
 
 ## Testing Guidelines
 
-No test framework, test files, test script, or coverage threshold is configured. Validate changes with `npm run build` and browser checks through `npm run dev`; check changed layouts at mobile and desktop widths.
+Vitest + Vue Test Utils with jsdom test forms, sessions, failures and routing in `src/__tests__/`. `tsconfig.vitest.json` is a root project reference with its own tsbuildinfo; `npm run type-check` must check tests too. Run tests and the full production build. Check 320px/mobile and desktop layouts, labels, focus and keyboard handling manually.
 
-@tsconfig.app.json excludes `src/**/__tests__/*`, so future tests there require separate test/type-check configuration.
+Account forms require HTTPS and must never send passwords from an HTTP origin. Development HTTPS/proxy options are in `.env.example` / `vite.config.ts`; preserve certificate verification. The root README also describes a built frontend served directly by the API's trusted development HTTPS certificate. Never commit certificate private keys or set `secure: false` on the proxy.
+
+Self-registration leads to separate login with a validated local return URL. Protected views wait for `/api/auth/me`; 401 clears private state, while network/5xx errors allow retry. Never automatically retry a POST. Keep the user and CSRF token in memory, never local/sessionStorage. Invalidate CSRF after login/logout. Sessions last at most 7 days; password recovery is S-08 and expense data is S-02. Do not add fabricated expenses to the account page.
 
 ## Commit & Pull Request Guidelines
 
-History contains only `Init first lesson` and `Second lesson`; no established prefix convention is evident. Use short, descriptive commit subjects.
+Follow the active change plan and repository skill gates; phase commits use Conventional Commits and require the prescribed approval.
 
-The root `../.github/workflows/containers.yml` builds the frontend inside the ARM64 image and checks HTTP behavior. For frontend PRs, describe the changed behavior, report build and browser validation, link related issues when applicable, and include screenshots for visible changes.
+The root `../.github/workflows/containers.yml` runs Vue tests and type checking inside the ARM64 image and checks HTTPS sessions with PostgreSQL. For frontend PRs, describe the changed behavior, report build and browser validation, link related issues when applicable, and include screenshots for visible changes.

@@ -730,3 +730,159 @@ Nie edytuj digestów tylko po to, żeby ominąć kontrolę stanu. Jeśli nie ma 
 - [ ] Po restarcie i zalogowaniu kontenery, runner i dostęp LAN wracają.
 
 Wyniki swojej instalacji możesz dopisać do [verification.md](verification.md), oddzielając je od lokalnych testów wykonanych wcześniej. Docelowy serwer jest skonfigurowany dopiero wtedy, gdy powyższe sprawdzenia faktycznie przejdą.
+
+
+## 21. Dodaj HTTPS do już działającego wdrożenia
+
+**Miejsce: Mac-serwer, GitHub i urządzenia w LAN.** Ta sekcja rozszerza zakończoną instalację z poprzednich punktów. Zacznij tutaj, jeśli aplikacja, PostgreSQL, OrbStack i runner już działają. Wcześniejsza instrukcja opisuje wykonany etap HTTP; poniżej przechodzisz na `https://<adres-Maca>:8443` w tym samym projekcie Compose, z istniejącą bazą, hasłem i historią wydań.
+
+### 21.0. Przekaż lokalne zmiany na Maca do testów przed commitem
+
+Jeżeli zmiany HTTPS nie są jeszcze w GitHub, `git pull` na serwerze ich nie pobierze. Do weryfikacji przed commitem użyj paczki aktualnych źródeł przygotowanej w workspace: `PennyPath-https-20261111.tar.gz`. Zawiera bieżące wersje plików projektu, w tym nowe pliki testów i Caddyfile; pomija `.git`, lokalne sekrety oraz wygenerowane zależności/buildy.
+
+Przenieś paczkę na Maca przez AirDrop do Pobranych. Rozpakuj ją w osobnym katalogu testowym, poza dotychczasowym checkoutem i katalogiem wdrożenia:
+
+```sh
+checks_dir=$(mktemp -d "$HOME/Serwer/penny-path/https-checks.XXXXXX")
+tar -xzf "$HOME/Downloads/PennyPath-https-20261111.tar.gz" -C "$checks_dir"
+cd "$checks_dir/PennyPath-https"
+docker build --platform linux/arm64 -t pennypath:ci .
+```
+
+Po udanym buildzie, w tym samym katalogu, wykonaj:
+
+```sh
+bash scripts/test-compose.sh
+```
+
+Test Compose sam tworzy izolowaną bazę, proxy i syntetyczne konta. Nie wymaga pliku `.env` serwera i nie instaluje CA w systemie. Korzysta z testowych portów 5000/18080/18443 i podsieci `172.30.91.0/24`; wykryta kolizja kończy test bez zmieniania istniejących sieci. Wyniki obu komend zamykają kryteria 4.5–4.6. Właściwą aktualizację działającego wdrożenia wykonaj według dalszych punktów po zatwierdzeniu kodu i publikacji obrazu.
+
+### 21.1. Wstrzymaj automatyczne wydania i zachowaj obecną konfigurację
+
+W GitHub ustaw `DEPLOY_ENABLED=false` i poczekaj na zakończenie aktywnego zadania `deploy`. Runner i działające kontenery mogą pozostać uruchomione.
+
+Na Macu ustaw ścieżki do **istniejącej** instalacji. Domyślny katalog obecnego `deploy.sh` to `$HOME/Serwer/penny-path/deploy`; jeśli używasz innego, wpisz go w `deploy_dir`. Nie przenoś wdrożenia do nowego katalogu na potrzeby HTTPS.
+
+```sh
+repo_dir="$HOME/Serwer/penny-path/repo"
+deploy_dir="${DEPLOY_DIR:-$HOME/Serwer/penny-path/deploy}"
+test -f "$deploy_dir/.env"
+test -f "$deploy_dir/release.env"
+test -f "$deploy_dir/compose.yaml"
+unset APP_IMAGE
+
+pp_compose() {
+  docker compose --project-name pennypath \
+    --env-file "$deploy_dir/.env" --env-file "$deploy_dir/release.env" \
+    -f "$deploy_dir/compose.yaml" "$@"
+}
+
+pp_compose ps
+postgres_before=$(pp_compose ps -q postgres)
+test -n "$postgres_before"
+umask 077
+https_backup="$deploy_dir/backups/before-https-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$https_backup"
+chmod 700 "$https_backup"
+cp "$deploy_dir/.env" "$deploy_dir/release.env" "$deploy_dir/compose.yaml" "$https_backup/"
+if [ -f "$deploy_dir/deploy/Caddyfile" ]; then
+  cp "$deploy_dir/deploy/Caddyfile" "$https_backup/Caddyfile"
+fi
+```
+
+`pennypath` musi być nazwą dotychczasowego projektu. Jeśli wcześniej użyłeś innej, zachowaj ją w funkcji oraz przekaż tę samą przez `COMPOSE_PROJECT_NAME` do `deploy.sh`. Wykonaj i sprawdź kopię/odtworzenie PostgreSQL według sekcji 17, przed zmianą konfiguracji. Zachowaj obecny sekret bazy; HTTPS nie wymaga nowego hasła ani ponownej inicjalizacji PostgreSQL.
+
+### 21.2. Dopisz ustawienia HTTPS do istniejącego .env
+
+Ustal stały adres IP Maca (np. rezerwacja DHCP) albo nazwę rozwiązywaną na urządzeniach LAN. Poniższy IP jest przykładem — zastąp go własnym.
+
+Otwórz **dotychczasowy** `$deploy_dir/.env`. Dopisz poniższe pola lub uaktualnij je, jeżeli już istnieją; każde pole powinno występować tylko raz:
+
+```dotenv
+LAN_HOST=192.168.1.50
+HTTPS_PORT=8443
+EDGE_SUBNET=172.30.90.0/24
+PROXY_IP=172.30.90.2
+```
+
+Zachowaj `POSTGRES_PASSWORD_FILE`, `APP_PORT` i inne ustawienia. Nie zastępuj tego pliku przez `.env.example`. LAN_HOST to sam IP lub hostname, bez `https://`, portu i ścieżki. Przed użyciem podsieci sprawdź `docker network ls` i pule w `docker network inspect <nazwa>`; jeśli `172.30.90.0/24` koliduje z istniejącą siecią, dobierz wolną podsieć i zmień **razem** EDGE_SUBNET/PROXY_IP. Nie usuwaj istniejących sieci.
+
+```sh
+chmod 600 "$deploy_dir/.env"
+```
+
+Sekret app/migratora musi być czytelny przez użytkownika kontenera bez roota: plik 0444 w prywatnym katalogu hosta 0700. Jeśli ten układ jest już przygotowany, zachowaj go. Jeśli nadal masz stary `./postgres-password`, wykonaj wyłącznie „Aktualizacja sekretu istniejącej instalacji” z sekcji 8, zachowując zawartość hasła i aktualizując ścieżkę w obecnym `.env`.
+
+### 21.3. Zsynchronizuj Compose i Caddyfile
+
+W istniejącym checkoutcie przygotuj wersję zmiany HTTPS, której obraz przeszedł `verify` i został opublikowany do GHCR. Jeżeli aktualizujesz checkout z `main`, najpierw sprawdź lokalne zmiany przez `git status`, potem użyj `git pull --ff-only origin main` na `main`. Wystarcza istniejący klon repozytorium i dotychczasowy runner.
+
+Po kopii z kroku 21.1 i przeglądzie różnic skopiuj dwa pliki:
+
+```sh
+mkdir -p "$deploy_dir/deploy"
+cp "$repo_dir/compose.yaml" "$deploy_dir/compose.yaml"
+cp "$repo_dir/deploy/Caddyfile" "$deploy_dir/deploy/Caddyfile"
+pp_compose config --quiet
+```
+
+Jeśli masz własne zmiany w Compose, przenieś je do nowej konfiguracji przed zastąpieniem pliku. Zachowaj istniejący serwis PostgreSQL, nazwę projektu, nazwę wolumenu bazy i źródło sekretu. Ten krok tylko synchronizuje pliki; nie odtwarza bazy.
+
+Nowa konfiguracja dodaje proxy Caddy, osobną sieć edge oraz wolumeny `app_keys`, `proxy_data` i `proxy_config`. Aplikacja ufa Forwarded-For/Proto wyłącznie od PROXY_IP. Jej port HTTP pozostaje na `127.0.0.1:${APP_PORT:-8080}` do kontroli zdrowia. Dostęp użytkowników przechodzi na HTTPS_PORT; w OrbStack pozostaw Expose ports to LAN i zezwól w firewallu na TCP 8443 (lub wybrany HTTPS_PORT).
+
+### 21.4. Zaktualizuj aplikację obsługującą proxy i trwałe klucze
+
+Nowy obraz musi zawierać obsługę zaufanego proxy i magazynu kluczy — samo uruchomienie Caddy przed starszym backendem nie wystarczy. Użyj digestu opublikowanego wydania HTTPS, zastępując poniższą wartość rzeczywistym adresem:
+
+```sh
+release_image='ghcr.io/pawelkam/pennypath@sha256:<64-znakowy-digest-wydania-HTTPS>'
+DEPLOY_DIR="$deploy_dir" bash "$repo_dir/scripts/deploy.sh" "$release_image"
+```
+
+Oczekiwany wynik: `Deployed ...`; dotychczasowy kontener PostgreSQL pozostaje uruchomiony. Aktualny skrypt sam uruchamia idempotentne `--migrate` z nowego obrazu **przed** wymianą app. Błąd migracji zachowuje poprzedni app i release.env; przerwij procedurę i sprawdź konfigurację, zamiast inicjalizować bazę ponownie. Zwykły start API nie migruje.
+
+Sprawdź zachowanie bazy, odczyt sekretu i prawa katalogu kluczy:
+
+```sh
+test "$(pp_compose ps -q postgres)" = "$postgres_before"
+pp_compose exec -T app sh -c \
+  'test "$(id -u)" != 0 && test -r /run/secrets/postgres_password && cat /run/secrets/postgres_password >/dev/null && test -w /var/lib/pennypath/keys && test "$(stat -c %a /var/lib/pennypath/keys)" = 700 && test "$(stat -c %u /var/lib/pennypath/keys)" = "$(id -u)"'
+```
+
+Oczekiwany kod to 0, bez wypisania hasła. Wolumen app_keys przechowuje klucze Data Protection aplikacji `PennyPath`. Po tym przejściu zachowuj go podczas kolejnych wydań; odtwarzanie zgodnego app nie powinno wymagać ponownego logowania. Jeśli wcześniej sesje używały nietrwałych kluczy, pierwsze przejście na ten magazyn może wymagać ponownego logowania.
+
+### 21.5. Uruchom proxy i wyeksportuj certyfikat CA
+
+```sh
+pp_compose up -d --no-deps proxy
+pp_compose ps
+pp_compose cp proxy:/data/caddy/pki/authorities/local/root.crt "$deploy_dir/pennypath-root.crt"
+openssl x509 -in "$deploy_dir/pennypath-root.crt" -noout -fingerprint -sha256
+```
+
+Oczekiwane: app i PostgreSQL healthy, proxy uruchomione i plik root.crt dostępny po starcie Caddy. Jeżeli certyfikat nie powstał, sprawdź `pp_compose logs --tail 50 proxy` i ponów eksport po uruchomieniu proxy. Caddy używa `tls internal`, bez publicznego DNS/ACME i bez przekierowania publicznego HTTP.
+
+Zachowuj wolumeny proxy_data i proxy_config z CA oraz app_keys z kluczami sesji. Kopie tych magazynów przechowuj zaszyfrowane jak inne sekrety serwera. Automatyczny deploy aktualizuje app; proxy i Caddyfile utrzymujesz tym osobnym krokiem.
+
+### 21.6. Zaufaj CA na urządzeniach i sprawdź HTTPS
+
+Skopiuj na urządzenia LAN **wyłącznie** `$deploy_dir/pennypath-root.crt`. Porównaj fingerprint z wynikiem na Macu-serwerze i dodaj certyfikat CA do zaufanych w systemie/przeglądarce. Na macOS użyj Dostępu do pęku kluczy; na iOS po instalacji profilu włącz pełne zaufanie w Ustawienia → Ogólne → To urządzenie → Ustawienia zaufania certyfikatów. Prywatny `root.key` i cały magazyn `/data` pozostają na serwerze. Odbiór wymaga połączenia bez ostrzeżeń certyfikatu i bez wyłączania weryfikacji TLS.
+
+Na Macu ustaw adres odpowiadający LAN_HOST / HTTPS_PORT z `.env` i uruchom kontrole:
+
+```sh
+https_url='https://192.168.1.50:8443'
+curl --fail --cacert "$deploy_dir/pennypath-root.crt" "$https_url/health"
+python3 "$repo_dir/scripts/smoke-test.py" "$https_url" --ca-cert "$deploy_dir/pennypath-root.crt"
+python3 "$repo_dir/scripts/test-auth.py" "$https_url" --ca-cert "$deploy_dir/pennypath-root.crt"
+```
+
+Test auth tworzy syntetyczne konta. W dwóch osobnych kontekstach przeglądarki otwórz `$https_url/app`: sprawdź rejestrację A/B, osobne logowanie, powrót do chronionej strony, własny email, sesję po ponownym otwarciu przeglądarki i wylogowanie. Rejestracja nie wymaga potwierdzenia emaila; sesja trwa maksymalnie 7 dni bez przedłużania. Sprawdź też klawiaturę, mobile/desktop i brak prywatnego widoku przed potwierdzeniem sesji. Odzyskanie hasła pozostaje w S-08, wydatki w S-02.
+
+Jeśli HTTPS działa tylko na serwerze, sprawdź zgodność LAN_HOST z adresem certyfikatu, trust CA, HTTPS_PORT/firewall, Expose ports to LAN i izolację urządzeń w Wi-Fi. Po zmianie LAN_HOST odtwórz samo proxy: `pp_compose up -d --no-deps --force-recreate proxy`, zachowując CA.
+
+### 21.7. Wznów dotychczasowy pipeline
+
+Po udanym odbiorze przywróć `DEPLOY_ENABLED=true`. Kolejne wydania używają istniejącego runnera i projektu, migrują z nowego obrazu i wymieniają wyłącznie app. Ręczny `deploy.sh rollback` pomija migrator starszego obrazu i zachowuje bazę, klucze oraz CA; schemat nie jest cofany. Dla niestandardowego deploy_dir zapewnij ten sam DEPLOY_DIR w środowisku kroku deploy workflow.
+
+Wynik tej aktualizacji: dotychczasowa aplikacja jest dostępna w LAN przez HTTPS, lokalny HTTP służy kontroli zdrowia, a baza/sekret i historia wdrożeń są zachowane. Nie powtarzasz instalacji OrbStack, rejestracji runnera, tworzenia bazy ani pierwszej konfiguracji GitHub z punktów 1–20.

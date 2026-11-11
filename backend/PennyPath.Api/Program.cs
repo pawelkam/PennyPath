@@ -23,6 +23,7 @@ builder.Services.AddIdentityCore<IdentityUser>(options => options.User.RequireUn
     .AddEntityFrameworkStores<PennyPathIdentityDbContext>()
     .AddSignInManager();
 builder.Services.AddPrivateAccountAccess();
+builder.Services.AddLanHosting(builder.Configuration, builder.Environment);
 
 if (migrate)
 {
@@ -33,6 +34,8 @@ if (migrate)
 
 var app = builder.Build();
 
+// Only the configured Caddy address may supply the original HTTPS scheme/IP.
+app.UseForwardedHeaders();
 app.UseExceptionHandler(errorApp => errorApp.Run(context =>
     AuthProblems.WriteAsync(context, 500, "server_error", "The request could not be completed.")));
 
@@ -42,7 +45,7 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi().AllowAnonymous();
 }
 
-// The LAN deployment serves HTTP; TLS will be added with the future tunnel.
+// Caddy terminates LAN TLS; loopback HTTP remains available for healthchecks.
 app.UseDefaultFiles();
 app.UseStaticFiles();
 

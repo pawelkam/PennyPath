@@ -6,7 +6,7 @@ services:
     platform: linux/arm64
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-8080}:8080"
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_HTTP_PORTS: "8080"
@@ -15,10 +15,36 @@ services:
       Database__Name: pennypath
       Database__Username: pennypath
       Database__PasswordFile: /run/secrets/postgres_password
+      Proxy__KnownProxy: ${PROXY_IP:-172.30.90.2}
+      DataProtection__KeysPath: /var/lib/pennypath/keys
+    volumes:
+      - app_keys:/var/lib/pennypath/keys
+    networks:
+      - default
+      - edge
     secrets:
       - postgres_password
     depends_on:
       postgres:
+        condition: service_healthy
+
+  proxy:
+    image: caddy:2.11.9-alpine
+    platform: linux/arm64
+    restart: unless-stopped
+    ports:
+      - "${HTTPS_PORT:-8443}:443"
+    environment:
+      LAN_HOST: ${LAN_HOST:?Set LAN_HOST to a stable LAN address or hostname}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - proxy_data:/data
+      - proxy_config:/config
+    networks:
+      edge:
+        ipv4_address: ${PROXY_IP:-172.30.90.2}
+    depends_on:
+      app:
         condition: service_healthy
 
   postgres:
@@ -42,6 +68,15 @@ services:
 
 volumes:
   postgres_data:
+  app_keys:
+  proxy_data:
+  proxy_config:
+
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: ${EDGE_SUBNET:-172.30.90.0/24}
 
 secrets:
   postgres_password:

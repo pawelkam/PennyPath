@@ -31,6 +31,9 @@ if a[0] == "compose":
         assert a[-1] == "app" and "--no-deps" in a and "--pull" in a
         s["image"] = image
         if image == s.get("up_fail"): result = 1
+    elif a[0] == "run":
+        assert a == ["run", "--rm", "--no-deps", "--pull", "never", "app", "--migrate"]
+        if image == s.get("migrate_fail"): result = 1
     elif a[0] == "port": output = "0.0.0.0:8080"
     elif a[0] == "stop": s["image"] = ""
 elif a[0] == "pull":
@@ -86,7 +89,14 @@ class DeploymentTest(unittest.TestCase):
         return data
 
     def test_success_records_previous(self):
-        self.assertEqual(self.run_deploy()["image"], NEW)
+        data = self.run_deploy()
+        self.assertEqual(data["image"], NEW)
+        calls = data["calls"]
+        pull = next(i for i, call in enumerate(calls) if call[0] == "pull")
+        migration = next(i for i, call in enumerate(calls) if "--migrate" in call)
+        replacement = next(i for i, call in enumerate(calls) if "up" in call)
+        self.assertLess(pull, migration)
+        self.assertLess(migration, replacement)
         self.assertEqual((self.directory / "release.env").read_text(), f"APP_IMAGE={NEW}\nPREVIOUS_IMAGE={OLD}\n")
 
     def test_pull_failure_keeps_running_app_and_state(self):
@@ -106,7 +116,9 @@ class DeploymentTest(unittest.TestCase):
         self.assertEqual(self.run_deploy(success=False)["image"], OLD)
 
     def test_manual_rollback_swaps_releases(self):
-        self.assertEqual(self.run_deploy("rollback")["image"], PREVIOUS)
+        data = self.run_deploy("rollback")
+        self.assertEqual(data["image"], PREVIOUS)
+        self.assertFalse(any("--migrate" in call for call in data["calls"]))
         self.assertEqual((self.directory / "release.env").read_text(), f"APP_IMAGE={PREVIOUS}\nPREVIOUS_IMAGE={OLD}\n")
 
     def test_retry_same_release_keeps_previous(self):
@@ -124,6 +136,23 @@ class DeploymentTest(unittest.TestCase):
         self.configure(image="")
         self.run_deploy()
         self.assertEqual((self.directory / "release.env").read_text(), f"APP_IMAGE={NEW}\nPREVIOUS_IMAGE=\n")
+
+    def test_migration_failure_keeps_running_app_and_release_unchanged(self):
+        before = (self.directory / "release.env").read_bytes()
+        self.configure(migrate_fail=NEW)
+        data = self.run_deploy(success=False)
+        self.assertTrue(any("--migrate" in call for call in data["calls"]))
+        self.assertEqual(data["image"], OLD)
+        self.assertFalse(any("up" in call or "stop" in call for call in data["calls"]))
+        self.assertEqual((self.directory / "release.env").read_bytes(), before)
+
+    def test_initial_migration_failure_does_not_start_app_or_record_release(self):
+        (self.directory / "release.env").unlink()
+        self.configure(image="", migrate_fail=NEW)
+        data = self.run_deploy(success=False)
+        self.assertEqual(data["image"], "")
+        self.assertFalse(any("up" in call or "stop" in call for call in data["calls"]))
+        self.assertFalse((self.directory / "release.env").exists())
 
     def test_untracked_app_is_rejected(self):
         self.configure(image=PREVIOUS)

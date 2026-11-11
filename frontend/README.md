@@ -1,6 +1,6 @@
-# .bootstrap-scaffold/frontend
+# PennyPath frontend
 
-This template should help get you started developing with Vue 3 in Vite.
+Vue 3, TypeScript, Vue Router and Vite provide account registration, login and a private account page.
 
 ## Recommended IDE Setup
 
@@ -61,6 +61,11 @@ Alternatywnie zbuduj Vue przez `npm run build`, skopiuj zawartość `dist/`
 do `backend/PennyPath.Api/wwwroot/` i uruchom z katalogu głównego
 `dotnet run --project backend/PennyPath.Api --launch-profile https`.
 Otwórz adres HTTPS wypisany przez API z zaufanym certyfikatem deweloperskim.
-Frontend i API mają wtedy wspólny origin bez proxy. Konto wymaga przygotowanej
-bazy i migracji z wcześniejszych faz; końcowe HTTPS/PostgreSQL w LAN oraz
-trwałość sesji na serwerze są odbierane w fazie 4.
+Frontend i API mają wtedy wspólny origin bez proxy. Konto wymaga skonfigurowanego PostgreSQL i migracji `--migrate`; nazwy zmiennych i komendy są w [głównym README](../README.md). Wariant Docker/Caddy udostępnia ten sam frontend i API pod `https://<LAN_HOST>:8443` z root CA zaufanym na każdym urządzeniu.
+
+Rejestracja nie wymaga potwierdzenia emaila i prowadzi do osobnego logowania.
+Sesja jest trwała przez maksymalnie 7 dni od logowania, bez przedłużania aktywnością.
+Odzyskiwanie hasła należy do S-08. `userId` z API jest stabilnym ID użytkownika
+(przyszły właściciel wydatków w S-02), niezależnym od emaila. Odbiór obejmuje dwa
+konta w osobnych kontekstach przeglądarki, klawiaturę, mobile/desktop, bezpieczny
+powrót oraz ponowne otwarcie przeglądarki i wylogowanie.

@@ -413,21 +413,21 @@ CA i Data Protection keys wymagają kopii/ochrony jak inne sekrety; prywatny klu
 
 #### Manual
 
-- [ ] 3.6 Użytkownik potwierdził czytelność formularzy na mobile i desktopie, obsługę klawiatury, brak prywatnego widoku przed potwierdzeniem sesji oraz komunikat wymagania HTTPS; odbiór pełnego przepływu z PostgreSQL następuje w fazie 4.
+- [x] 3.6 Użytkownik potwierdził czytelność formularzy na mobile i desktopie, obsługę klawiatury, brak prywatnego widoku przed potwierdzeniem sesji oraz komunikat wymagania HTTPS; odbiór pełnego przepływu z PostgreSQL następuje w fazie 4.
 
 ### Phase 4: Integracja HTTPS w LAN
 
 #### Automated
 
-- [ ] 4.1 Cały zestaw backendu przechodzi: `dotnet test backend/PennyPath.slnx`.
-- [ ] 4.2 Testy i produkcyjny build Vue przechodzą: `npm --prefix frontend run test:unit -- --run` oraz `npm --prefix frontend run build`.
-- [ ] 4.3 Testy transakcji wdrożeniowej z migratorem przechodzą: `python3 scripts/test-deploy.py`.
-- [ ] 4.4 Skrypty Bash mają poprawną składnię: `bash -n scripts/deploy.sh` oraz `bash -n scripts/test-compose.sh`.
-- [ ] 4.5 Gotowy obraz przechodzi build i wbudowane testy na hoście ARM64 z Dockerem: `docker build --platform linux/arm64 -t pennypath:ci .`.
-- [ ] 4.6 Pełna kontrola HTTPS/PostgreSQL/sesji i regresji przechodzi na tym samym hoście: `bash scripts/test-compose.sh`.
-- [ ] 4.7 Zmiany nie zawierają błędów whitespace: `git diff --check`.
+- [x] 4.1 Cały zestaw backendu przechodzi: `dotnet test backend/PennyPath.slnx`.
+- [x] 4.2 Testy i produkcyjny build Vue przechodzą: `npm --prefix frontend run test:unit -- --run` oraz `npm --prefix frontend run build`.
+- [x] 4.3 Testy transakcji wdrożeniowej z migratorem przechodzą: `python3 scripts/test-deploy.py`.
+- [x] 4.4 Skrypty Bash mają poprawną składnię: `bash -n scripts/deploy.sh` oraz `bash -n scripts/test-compose.sh`.
+- [x] 4.5 Gotowy obraz przechodzi build i wbudowane testy na hoście ARM64 z Dockerem: `docker build --platform linux/arm64 -t pennypath:ci .`.
+- [x] 4.6 Pełna kontrola HTTPS/PostgreSQL/sesji i regresji przechodzi na tym samym hoście: `bash scripts/test-compose.sh`.
+- [x] 4.7 Zmiany nie zawierają błędów whitespace: `git diff --check`.
 
 #### Manual
 
-- [ ] 4.8 Użytkownik potwierdził zaufany HTTPS w LAN na dwóch urządzeniach/kontekstach, rejestrację dwóch kont, powrót po logowaniu, ponowne otwarcie przeglądarki z zachowaniem sesji i wylogowanie bez dostępu do drugiego konta.
-- [ ] 4.9 Operator potwierdził zachowanie istniejącej bazy, wykonanie migracji przed wydaniem, trwałe klucze/CA i czytelność instrukcji konfiguracji; wyników Dockera nie zastąpiono lokalną kompilacją.
+- [x] 4.8 Użytkownik potwierdził zaufany HTTPS w LAN na dwóch urządzeniach/kontekstach, rejestrację dwóch kont, powrót po logowaniu, ponowne otwarcie przeglądarki z zachowaniem sesji i wylogowanie bez dostępu do drugiego konta.
+- [x] 4.9 Operator potwierdził zachowanie istniejącej bazy, wykonanie migracji przed wydaniem, trwałe klucze/CA i czytelność instrukcji konfiguracji; wyników Dockera nie zastąpiono lokalną kompilacją.

@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """Check the published Vue app and ASP.NET routes, with no extra packages."""
+import argparse
 import json
 import re
-import sys
+import ssl
 import urllib.error
 import urllib.request
 
-base = sys.argv[1].rstrip("/") if len(sys.argv) > 1 else "http://127.0.0.1:8080"
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("url", nargs="?", default="http://127.0.0.1:8080")
+parser.add_argument("--ca-cert", help="Trusted LAN proxy root certificate")
+args = parser.parse_args()
+base = args.url.rstrip("/")
+context = ssl.create_default_context(cafile=args.ca_cert)
 
 
 def get(path, expected=200):
     try:
-        response = urllib.request.urlopen(base + path, timeout=10)
+        response = urllib.request.urlopen(base + path, timeout=10, context=context)
     except urllib.error.HTTPError as error:
         response = error
     with response:

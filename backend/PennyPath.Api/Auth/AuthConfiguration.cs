@@ -1,9 +1,12 @@
 using System.Globalization;
+using System.Net;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -15,6 +18,46 @@ public static class AuthConfiguration
     public const string CsrfHeader = "X-CSRF-TOKEN";
     public const string AttemptsPolicy = "auth-attempts";
     public static readonly TimeSpan SessionLifetime = TimeSpan.FromDays(7);
+
+    public static IServiceCollection AddLanHosting(this IServiceCollection services,
+        IConfiguration configuration, IHostEnvironment environment)
+    {
+        var protection = services.AddDataProtection()
+            .SetApplicationName(environment.IsProduction() ? "PennyPath" : $"PennyPath.{environment.EnvironmentName}");
+        if (environment.IsProduction())
+        {
+            var keysPath = configuration["DataProtection:KeysPath"];
+            if (string.IsNullOrWhiteSpace(keysPath) || !Directory.Exists(keysPath))
+            {
+                throw new InvalidOperationException("Configure an existing private DataProtection:KeysPath directory.");
+            }
+
+            protection.PersistKeysToFileSystem(new DirectoryInfo(keysPath));
+        }
+
+        services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            var proxyAddress = configuration["Proxy:KnownProxy"];
+            if (!environment.IsProduction() && string.IsNullOrWhiteSpace(proxyAddress))
+            {
+                return;
+            }
+
+            if (!IPAddress.TryParse(proxyAddress, out var proxy))
+            {
+                throw new InvalidOperationException("Proxy:KnownProxy must be the exact reverse proxy IP address.");
+            }
+
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            options.ForwardLimit = 1;
+            options.RequireHeaderSymmetry = true;
+            options.KnownIPNetworks.Clear();
+            options.KnownProxies.Clear();
+            options.KnownProxies.Add(proxy);
+        });
+
+        return services;
+    }
 
     public static IServiceCollection AddPrivateAccountAccess(this IServiceCollection services)
     {

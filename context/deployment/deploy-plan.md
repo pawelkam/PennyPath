@@ -1,136 +1,134 @@
-# PennyPath — Docker Compose na Macu M1
+# PennyPath — HTTPS w LAN na Macu M1
 
-**Samodzielna instalacja od początku:** przejdź do [szczegółowej instrukcji krok po kroku](mac-m1-setup.md). Zawiera komendy, ustawienia GitHub, oczekiwane wyniki i diagnostykę. Ten dokument opisuje skrócony kontrakt wdrożenia.
+Szczegółowe przygotowanie Maca i GitHub opisuje [mac-m1-setup.md](mac-m1-setup.md). Ten dokument jest kontraktem aktualnego wdrożenia S-01. Komendy na rzeczywistym serwerze wykonuje operator; przygotowanie plików nie oznacza wdrożenia ani instalacji CA na urządzeniach.
 
-## Zakres
+## Zakres i trwałe zasoby
 
-Jeden obraz `linux/arm64` zawiera build Vue i ASP.NET Core. Aplikacja działa bez roota i udostępnia HTTP na porcie 8080. PostgreSQL 18 działa w osobnym kontenerze z trwałym wolumenem pod `/var/lib/postgresql` oraz healthcheckiem; port bazy pozostaje wewnętrzny. Oba serwisy mają `restart: unless-stopped`.
+Jeden obraz `linux/arm64` zawiera Vue i ASP.NET Core. Proces app/migratora działa bez roota. PostgreSQL 18 używa istniejącego `pennypath_postgres_data` pod `/var/lib/postgresql` i nie publikuje portu. Caddy 2.11.9-alpine kończy TLS przez `tls internal`, bez publicznego DNS/ACME i bez publicznego redirectu HTTP. Wszystkie serwisy mają `restart: unless-stopped`.
 
-Faza 1 S-01 dodaje magazyn kont Identity, konfigurację połączenia API z PostgreSQL i jednorazowy tryb `--migrate`. Formularze i endpointy logowania, HTTPS w LAN, wydatki i Cloudflare Tunnel powstają w dalszych fazach. `/health` potwierdza działanie procesu HTTP, a nie gotowość schematu kont. Zwykły start aplikacji nie wykonuje migracji; automatyczne włączenie migratora do `deploy.sh` należy do fazy 4 S-01.
+Przeglądarka używa wspólnego originu `https://<LAN_HOST>:8443` (domyślny port). HTTP app jest publikowane tylko na `127.0.0.1:${APP_PORT:-8080}` do kontroli zdrowia. `LAN_HOST` to stały IP lub nazwa osiągalna na urządzeniach, bez protokołu, portu ani ścieżki. `localhost` w szablonie służy wyłącznie lokalnemu uruchomieniu.
 
-## 1. Pierwsza publikacja
+App należy do sieci bazy i osobnej `edge`. Proxy jest wyłącznie na `edge`: `EDGE_SUBNET=172.30.90.0/24`, `PROXY_IP=172.30.90.2`. Sprawdź istniejące sieci Dockera przed konfiguracją; przy konflikcie dobierz i ustaw obie wartości razem. App przetwarza Forwarded-For/Proto wyłącznie od tego dokładnego IP, przed auth i CSRF. Caddy nadpisuje nagłówki otrzymane od klienta.
 
-1. Umieść kod wraz z frontendem, backendem, lockfile npm, Dockerfile, Compose, workflow i skryptami w `main` repozytorium `pawelkam/PennyPath`. Skonfiguruj `main` jako domyślną gałąź. W istniejącym workspace są także wcześniejsze zmiany użytkownika; dobierz pliki do commita świadomie.
-2. Pozostaw zmienną repozytorium `DEPLOY_ENABLED` nieustawioną lub ustawioną na `false`. Push do `main` wykona weryfikację i publikację bez próby użycia domowego runnera.
-3. Poczekaj na zielone zadania `verify` i `publish`. Obraz otrzyma tag pełnego SHA commita. Digest odczytaj z kroku publikacji lub strony pakietu.
-4. W GitHub otwórz pakiet `pennypath` → Package settings → Change visibility → Public. Publiczny obraz umożliwia anonimowe pobranie na Macu. [GHCR tworzy nowy pakiet jako prywatny](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+Zachowuj nazwę projektu `pennypath` i wolumeny:
 
-Runner `ubuntu-24.04-arm` buduje natywnie ARM64. Dostępność i rozliczenia zależą od rodzaju repozytorium/konta; potwierdź je w [dokumentacji runnerów GitHub](https://docs.github.com/en/actions/reference/runners/github-hosted-runners). Workflow używa `GITHUB_TOKEN` z prawem `packages: write` tylko w zadaniu publikacji.
+- `postgres_data`: baza i konta Identity.
+- `app_keys`: `/var/lib/pennypath/keys`, katalog APP_UID z trybem 0700; nazwa aplikacji Data Protection to `PennyPath`.
+- `proxy_data` i `proxy_config`: CA, klucze oraz stan Caddy.
 
-## 2. OrbStack i konto serwera
+Wylogowanie kończy bieżącą sesję; cookie trwa najwyżej 7 dni bez przedłużania. Wymiana zgodnego obrazu nie powinna wymagać ponownego logowania. Development i testy używają osobnych kluczy. Kopie kluczy aplikacji i prywatnego CA przechowuj zaszyfrowane poza Macem wraz z kopią bazy; nie usuwaj wolumenów podczas zwykłego wdrożenia.
 
-Na docelowym Macu:
+## 1. Przygotowanie publikacji i serwera
 
-1. Sprawdź `uname -m` (oczekiwane `arm64`) i `sw_vers`. Zainstaluj wspierany [OrbStack](https://docs.orbstack.dev/), uruchom go na koncie, które będzie wykonywało wdrożenia, i włącz start przy logowaniu.
-2. Sprawdź `docker context use orbstack`, `docker info` i `docker compose version`. To konto musi mieć dostęp do silnika Docker i własnego katalogu `~/pennypath/deploy`.
-3. Wyłącz usypianie Maca podczas pracy serwera. Zapewnij stabilny adres w LAN, np. rezerwację DHCP. Zezwól na port 8080 w lokalnym firewallu i sprawdź dostęp z drugiego urządzenia.
-4. Zapewnij Git i Python 3 do ręcznej weryfikacji. Node i SDK .NET nie są wymagane na serwerze — build odbywa się w kontenerze na GitHub.
+PR uruchamia `verify` na GitHub ARM64; build obrazu wykonuje xUnit, testy Vue i kontrolę typów, a test Compose sprawdza rzeczywisty PostgreSQL/HTTPS/sesje. Dopiero zielone `verify` odblokowuje `publish`. `main` publikuje tag SHA i digest GHCR, a `DEPLOY_ENABLED=true` włącza wydania na runnerze Maca (`self-hosted`, `macOS`, `ARM64`, `pennypath-deploy`). Pakiet GHCR powinien mieć widoczność publiczną dla anonimowego pull.
 
-`restart: unless-stopped` działa po uruchomieniu silnika OrbStack. Nie zakładamy działania przed zalogowaniem użytkownika; FileVault, login i start OrbStack stanowią część próby restartu.
+Na serwerze sprawdź `uname -m`, OrbStack, `docker info` i `docker compose version`. Włącz OrbStack po logowaniu, dostęp portu HTTPS z LAN i pracę bez uśpienia. Nie zakładamy działania przed zalogowaniem/FileVault. Node i SDK są potrzebne tylko podczas budowania, nie na serwerze.
 
-## 3. Inicjalizacja trwałego katalogu
+Domyślne katalogi: `$HOME/Serwer/penny-path/repo`, `$HOME/Serwer/penny-path/deploy`, `$HOME/Serwer/penny-path/actions-runner`. Skrypt respektuje `DEPLOY_DIR`; dla istniejącej lokalizacji ustaw go jawnie przy każdym ręcznym uruchomieniu i w środowisku kroku deploy workflow. Używaj tego samego projektu i pliku Compose podczas utrzymania, aby nie utworzyć nowej bazy przypadkiem.
 
-Pobierz `main` do `~/pennypath/repo`. Z katalogu repozytorium wykonaj poniższe komendy, zastępując przykładowy digest rzeczywistym wynikiem pierwszej publikacji:
+## 2. Pierwsza konfiguracja albo aktualizacja istniejącej
+
+**Istniejąca instalacja:** ustaw `DEPLOY_ENABLED=false`, poczekaj na zakończenie aktywnych wydań, wykonaj i sprawdź kopię/odtworzenie z sekcji 5. Zachowaj poprzedni Compose, `.env`, release record, sekret i wolumen PostgreSQL. Dopiero potem zsynchronizuj `compose.yaml` i `deploy/Caddyfile` do trwałego katalogu. Nie uruchamiaj ponownego generowania hasła.
+
+**Nowa instalacja**, z checkoutu repozytorium:
 
 ```sh
-deploy_dir="$HOME/pennypath/deploy"
+deploy_dir="${DEPLOY_DIR:-$HOME/Serwer/penny-path/deploy}"
 mkdir -p "$deploy_dir"
 chmod 700 "$deploy_dir"
-if [ -e "$deploy_dir/.env" ] || [ -e "$deploy_dir/postgres-password" ] || [ -e "$deploy_dir/secrets/postgres-password" ]; then
-  printf 'Konfiguracja już istnieje. Zachowaj hasło i skorzystaj z aktualizacji sekretu opisanej poniżej.\n'
+if [ -e "$deploy_dir/.env" ] || [ -e "$deploy_dir/release.env" ] || [ -e "$deploy_dir/compose.yaml" ] || [ -e "$deploy_dir/postgres-password" ] || [ -e "$deploy_dir/secrets/postgres-password" ]; then
+  printf 'Istniejąca konfiguracja: zachowaj bazę i hasło, wykonaj procedurę aktualizacji.\n'
 else
-  mkdir -p "$deploy_dir/secrets"
+  mkdir -p "$deploy_dir/secrets" "$deploy_dir/deploy"
   chmod 700 "$deploy_dir/secrets"
   cp compose.yaml "$deploy_dir/compose.yaml"
+  cp deploy/Caddyfile "$deploy_dir/deploy/Caddyfile"
   cp .env.example "$deploy_dir/.env"
   (umask 077; openssl rand -hex 32 > "$deploy_dir/secrets/postgres-password")
   chmod 600 "$deploy_dir/.env"
   chmod 444 "$deploy_dir/secrets/postgres-password"
 fi
+```
 
+Dla starego `./postgres-password` utwórz `secrets` z 0700, przenieś ten sam plik do `secrets/postgres-password` bez nadpisania istniejącego celu, ustaw plik 0444 i zmień wyłącznie ścieżkę `POSTGRES_PASSWORD_FILE` w `.env`. Nie regeneruj hasła: zmiana pliku nie zmienia hasła istniejącego PostgreSQL. Katalog 0700 musi być ustawiony **przed** nadaniem plikowi 0444. `.env` pozostaje 0600. Nie polegaj na remapowaniu `uid/gid/mode` sekretu Compose o źródle plikowym.
+
+Zsynchronizuj konfigurację istniejącej instalacji po kopii (z checkoutu, z poprawnie ustawionym `deploy_dir`):
+
+```sh
+mkdir -p "$deploy_dir/deploy"
+cp compose.yaml "$deploy_dir/compose.yaml"
+cp deploy/Caddyfile "$deploy_dir/deploy/Caddyfile"
+```
+
+Edytuj zachowany `.env`: `POSTGRES_PASSWORD_FILE`, `LAN_HOST`, `HTTPS_PORT` (8443), `APP_PORT` (8080, tylko loopback), `EDGE_SUBNET`, `PROXY_IP`. `APP_IMAGE` dostarcza skrypt. Nie przechowuj sekretów w `VITE_*`, CLI, repozytorium lub obrazie.
+
+## 3. Pierwsze wydanie HTTPS i zaufanie CA
+
+Z checkoutu, po pobraniu zatwierdzonego obrazu:
+
+```sh
 release_image='ghcr.io/pawelkam/pennypath@sha256:<64-znakowy-digest>'
+docker pull --platform linux/arm64 "$release_image"
 APP_IMAGE="$release_image" docker compose --project-name pennypath \
-  --env-file "$deploy_dir/.env" -f "$deploy_dir/compose.yaml" \
-  up -d --wait --wait-timeout 120 postgres
+  --env-file "$deploy_dir/.env" -f "$deploy_dir/compose.yaml" config --quiet
 APP_IMAGE="$release_image" docker compose --project-name pennypath \
-  --env-file "$deploy_dir/.env" -f "$deploy_dir/compose.yaml" \
-  run --rm --no-deps app --migrate
-bash scripts/deploy.sh "$release_image"
-python3 scripts/smoke-test.py http://127.0.0.1:8080
-```
-
-Komendy inicjalizacji i pierwszego wydania są przeznaczone dla nowej instalacji. Nie generuj ponownie hasła przy kolejnych wdrożeniach. PostgreSQL ustawia je przy pierwszej inicjalizacji wolumenu; zmiana pliku nie zmienia hasła istniejącej bazy. Ten sam plik jest montowany tylko do odczytu do PostgreSQL, app i jednorazowego migratora. Sekret nie trafia do obrazu, konfiguracji frontendowej ani repozytorium.
-
-Plik `secrets/postgres-password` ma `0444`, dzięki czemu odczyta go użytkownik kontenera app bez roota. Na hoście chroni go prywatny katalog `secrets` z `0700`; najpierw zabezpiecz katalog, dopiero potem nadaj plikowi `0444`. `.env` pozostaje `0600`. Samo `uid/gid/mode` w konfiguracji sekretu Compose o źródle plikowym nie remapuje uprawnień bind mountu.
-
-**Istniejąca instalacja z `./postgres-password`:** zachowaj zawartość pliku i wolumen bazy. W trwałym katalogu utwórz `secrets` z `0700`, przenieś istniejący plik do `secrets/postgres-password` bez nadpisania innego sekretu i ustaw mu `0444`. Zmień wyłącznie ścieżkę `POSTGRES_PASSWORD_FILE` w istniejącym `.env` na `./secrets/postgres-password` (pozostałe ustawienia zachowaj). Zsynchronizuj nowy Compose zgodnie z procedurą utrzymania. Dla niestandardowej starej ścieżki najpierw ustal faktyczne źródło pliku. Nie inicjalizuj ponownie bazy ani nie zmieniaj hasła przez wygenerowanie nowego pliku.
-
-Po pobraniu obrazu i przygotowaniu konfiguracji sprawdź odczyt z użytkownikiem rzeczywistego obrazu, bez wyświetlania sekretu:
-
-```sh
+  --env-file "$deploy_dir/.env" -f "$deploy_dir/compose.yaml" up -d --wait --wait-timeout 120 postgres
 APP_IMAGE="$release_image" docker compose --project-name pennypath \
-  --env-file "$deploy_dir/.env" -f "$deploy_dir/compose.yaml" \
-  run --rm --no-deps --entrypoint sh app -c \
-  'test "$(id -u)" != 0 && test -r /run/secrets/postgres_password && cat /run/secrets/postgres_password >/dev/null'
+  --env-file "$deploy_dir/.env" -f "$deploy_dir/compose.yaml" run --rm --no-deps --entrypoint sh app -c \
+  'test "$(id -u)" != 0 && test -r /run/secrets/postgres_password && cat /run/secrets/postgres_password >/dev/null && test -w /var/lib/pennypath/keys && test "$(stat -c %a /var/lib/pennypath/keys)" = 700 && test "$(stat -c %u /var/lib/pennypath/keys)" = "$(id -u)"'
+DEPLOY_DIR="$deploy_dir" bash scripts/deploy.sh "$release_image"
 ```
 
-Oczekiwany kod to 0 bez zawartości pliku na ekranie. `--migrate` stosuje wyłącznie oczekujące migracje i kończy się kodem 0; błąd daje kod niezerowy bez szczegółów poświadczeń. Nie kontynuuj ręcznego wydania po błędzie migracji. Przed migracją istniejącej bazy wykonaj i sprawdź kopię z sekcji 6.
+Kontrola odczytu zwraca 0 bez zawartości sekretu. Deploy sam uruchamia `--migrate` z nowego obrazu, przed wymianą app. Migrator nie nasłuchuje HTTP, kończy się kodem 0/nonzero i można go bezpiecznie ponowić. `/health` jest kontrolą procesu, nie dowodem gotowości schematu. Zwykły start API nie migruje.
 
-`release.env` zapisuje `APP_IMAGE` i `PREVIOUS_IMAGE`. Skrypt zapisuje je atomowo dopiero po pozytywnym healthchecku. Przy pierwszym wydaniu poprzedni digest jest pusty. Kolejne operacje Compose uruchamiaj w trwałym katalogu:
+Następnie uruchom lub świadomie odtwórz proxy z trwałego katalogu:
 
 ```sh
-cd "$HOME/pennypath/deploy"
-docker compose --env-file .env --env-file release.env ps
-docker compose --env-file .env --env-file release.env logs --tail 100 app
+cd "$deploy_dir"
+unset APP_IMAGE
+docker compose --project-name pennypath --env-file .env --env-file release.env up -d --no-deps proxy
+docker compose --project-name pennypath --env-file .env --env-file release.env cp \
+  proxy:/data/caddy/pki/authorities/local/root.crt ./pennypath-root.crt
 ```
 
-Compose na serwerze jest trwałą konfiguracją, niezależną od checkoutu runnera. Zmiana `compose.yaml` w repozytorium wymaga świadomej synchronizacji tego pliku na serwer i weryfikacji wpływu na PostgreSQL. Automatyczne wydanie aktualizuje wyłącznie serwis `app`.
+Wyeksportuj **wyłącznie certyfikat root.crt**. Zweryfikuj jego fingerprint na serwerze i urządzeniu (np. `openssl x509 -in pennypath-root.crt -noout -fingerprint -sha256`). Zaufaj certyfikatowi lokalnego CA w systemie/przeglądarce na każdym urządzeniu LAN. Na macOS użyj Dostępu do pęku kluczy; na iOS po instalacji profilu włącz pełne zaufanie w Ustawienia → Ogólne → To urządzenie → Ustawienia zaufania certyfikatów. Nie kopiuj `root.key` ani całego magazynu `/data`, nie wyłączaj weryfikacji TLS i nie akceptuj ostrzeżeń jako odbioru. Po zmianie LAN_HOST odtwórz proxy; CA pozostaje to samo.
 
-## 4. Self-hosted runner i włączenie wdrożeń
-
-W repozytorium GitHub przejdź do Settings → Actions → Runners → New self-hosted runner. Wybierz macOS / ARM64 i wykonaj aktualne polecenia instalacji oraz rejestracji w osobnym katalogu, np. `~/actions-runner`. Dodaj etykietę **`pennypath-deploy`**; domyślne etykiety `self-hosted`, `macOS` i `ARM64` pozostają wymagane. [Rejestracja runnera](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/add-runners).
-
-Runner ma działać na tym samym koncie co OrbStack. Najpierw uruchom `./run.sh` i sprawdź połączenie. Następnie skonfiguruj usługę `./svc.sh install` i `./svc.sh start`, według [instrukcji GitHub dla macOS](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/configure-the-application). Korzystaj z aktualnej wersji runnera obsługującej akcje Node 24 (minimum 2.327.1). Workflow dodaje `$HOME/.orbstack/bin` do PATH i wybiera kontekst `orbstack`.
-
-Po udanym pierwszym wdrożeniu oraz sprawdzeniu dostępu LAN ustaw Settings → Secrets and variables → Actions → Variables → **`DEPLOY_ENABLED=true`**. Uruchom Actions → Containers → Run workflow → `main` i potwierdź zadanie `deploy`. Późniejszy merge PR do `main` automatycznie publikuje i wdraża obraz. PR wykonuje wyłącznie `verify` na GitHub; nie uruchamia zadań na domowym serwerze.
-
-Cały workflow dla `main` ma wspólną grupę concurrency z `cancel-in-progress: false`. Trwające wydanie nie jest przerywane przez kolejne. GitHub może zastąpić starsze oczekujące uruchomienie nowszym; mechanizm nie jest kolejką gwarantującą wdrożenie każdego pośredniego commita. Skrypt dodatkowo ma lokalną blokadę, która chroni przed jednoczesnym ręcznym wdrożeniem.
-
-## 5. Wdrożenie i rollback
-
-Skrypt akceptuje wyłącznie pełny digest obrazu `ghcr.io/pawelkam/pennypath`. Przed zmianą sprawdza stan zapisany w `release.env`, zdrowie PostgreSQL i dostępność lokalnego obrazu poprzedniego wydania. Pobiera nowy obraz przed odtworzeniem aplikacji. Nieudane pobranie pozostawia działający kontener.
-
-Aktualizacja używa `up -d --no-deps --pull never app`; nie odtwarza PostgreSQL ani jego wolumenu. Przez maksymalnie 120 sekund sprawdza healthcheck kontenera, oczekiwany digest i HTTP 200 z `/health`. Przy niepowodzeniu przywraca bieżący zapisany digest z lokalnego cache i ponownie sprawdza jego zdrowie; workflow kończy się błędem również po udanym rollbacku. Pierwsze nieudane wydanie zatrzymuje niesprawny `app`.
-
-Ręczne cofnięcie do poprzedniego wydania, z checkoutu repozytorium:
+Z checkoutu, dla rzeczywistego LAN_HOST/HTTPS_PORT:
 
 ```sh
-bash scripts/deploy.sh rollback
+python3 scripts/smoke-test.py https://<LAN_HOST>:8443 --ca-cert "$deploy_dir/pennypath-root.crt"
+python3 scripts/test-auth.py https://<LAN_HOST>:8443 --ca-cert "$deploy_dir/pennypath-root.crt"
 ```
 
-Po udanym rollbacku bieżący i poprzedni digest zamieniają się miejscami. Ponowne wdrożenie tego samego digestu zachowuje poprzednie wydanie. Nie usuwaj obrazu aktualnego wydania z lokalnego cache przed zakończeniem aktualizacji. W przypadku błędu odtwarzania skrypt zgłasza go osobno; sprawdź logi i ręcznie wdróż digest zapisany w `release.env`.
+Podstaw wartości za placeholdery. Test auth tworzy konta syntetyczne. Ręcznie zaufaj CA na dwóch urządzeniach/kontekstach i sprawdź rejestrację A/B, osobne logowanie, własny email, powrót do chronionej strony, restart przeglądarki z sesją i logout. Hasła 12–128 znaków, bez wymuszania klas znaków; email bez potwierdzenia. Recovery jest S-08, rzeczywiste wydatki S-02. Po odbiorze ponownie włącz `DEPLOY_ENABLED=true`.
 
-Blokada `.deploy-lock` jest usuwana po zwykłym zakończeniu i sygnałach INT/TERM. Po awarii zasilania lub SIGKILL najpierw potwierdź, że nie działa żadne wdrożenie. Porównaj obraz kontenera z `release.env`, odtwórz zapisany obraz, jeśli aktualizacja została przerwana, a dopiero wtedy usuń pustą blokadę komendą `rmdir`. Przed ręcznym rollbackiem lub utrzymaniem zatrzymaj kolejkę wdrożeń przez `DEPLOY_ENABLED=false` i poczekaj na zakończenie aktywnego zadania.
+## 4. Transakcja wdrożenia i rollback
 
-## 6. Kopie PostgreSQL i odtwarzanie
+`deploy.sh` akceptuje niezmienny digest ze wskazanego repozytorium i stosuje blokadę `.deploy-lock`. Sprawdza zgodność kontenera z `release.env`, zdrowie PostgreSQL i cache bieżącego obrazu. Pobiera nowy obraz, uruchamia `compose run --rm --no-deps --pull never app --migrate`, potem wymienia tylko app przez `up -d --no-deps --pull never app`. Błąd pull lub migracji zachowuje dotychczasowy kontener oraz release record; migracja może pozostawić zastosowane zmiany schematu i nie jest automatycznie cofana.
 
-W trwałym katalogu zrób logiczną kopię (zawiera dane, nie hasło logowania):
+Po wymianie app skrypt sprawdza przez maksymalnie 120 sekund healthcheck, digest i lokalny HTTP 200. Dopiero sukces atomowo zapisuje APP_IMAGE / PREVIOUS_IMAGE. Błąd healthchecku przywraca poprzednio działający obraz bez cofania schematu; brak poprzedniego wydania oznacza zatrzymanie niesprawnego app. Nie usuwaj bieżącego obrazu z cache przed aktualizacją.
+
+`bash scripts/deploy.sh rollback` zamienia zapisane wydania i **pomija migrator starszego obrazu**. Odpowiedzialność za zgodność starszego kodu z nowszym schematem pozostaje jawna; rollback nie usuwa kont, kluczy ani CA. S-01 dodaje tabele bez usuwania wcześniejszych danych. Stan syntetycznej sesji można zapisać `test-auth.py ... --state /private/temp/session.json`, a po zmianie obrazu sprawdzić `--resume` zamiast ponownego loginu. Artefakt 0600 zawiera cookie i ID, bez hasła; trzymaj go ulotnie poza repo i usuń po teście.
+
+Automatyczny deploy aktualizuje app, bez restartu proxy/PostgreSQL. Compose, Caddyfile, obraz Caddy i CA utrzymuje operator. Przed takimi zmianami wyłącz deploy i poczekaj na trwające zadania. Po awarii zasilania/SIGKILL uzgodnij kontener z release.env, upewnij się, że nie trwa deploy, i dopiero wtedy usuń pustą pozostałą blokadę przez `rmdir`.
+
+## 5. Kopia i próba odtworzenia
+
+W trwałym katalogu, z wyłączonym automatycznym deployem:
 
 ```sh
-cd "$HOME/pennypath/deploy"
+cd "$deploy_dir"
+umask 077
 mkdir -p backups
 chmod 700 backups
 backup_file="backups/pennypath-$(date +%Y%m%d-%H%M%S).dump"
-docker compose --env-file .env --env-file release.env exec -T postgres \
-  pg_dump -U pennypath -d pennypath -Fc > "$backup_file"
-chmod 600 "$backup_file"
-```
-
-Przechowuj zaszyfrowaną kopię poza Macem. Sam wolumen i kopia na tym samym dysku nie zabezpieczają przed awarią urządzenia. Po wdrożeniu funkcji produktu automatyzuj kopie z retencją dobraną do akceptowanej utraty danych.
-
-Próbę odtworzenia przeprowadź w osobnej bazie, bez zmiany bazy aplikacji:
-
-```sh
+if docker compose --env-file .env --env-file release.env exec -T postgres \
+  pg_dump -U pennypath -d pennypath -Fc > "$backup_file.tmp"; then
+  mv "$backup_file.tmp" "$backup_file"
+else
+  printf 'Eksport nieudany; plik .tmp nie jest kompletną kopią.\n'
+  exit 1
+fi
 docker compose --env-file .env --env-file release.env exec -T postgres \
   createdb -U pennypath pennypath_restore_check
 docker compose --env-file .env --env-file release.env exec -T postgres \
@@ -139,13 +137,15 @@ docker compose --env-file .env --env-file release.env exec -T postgres \
   psql -U pennypath -d pennypath_restore_check -c '\dt'
 ```
 
-Porównaj liczbę rekordów i przyszłe sumy wydatków, potem usuń bazę kontrolną przez `dropdb -U pennypath pennypath_restore_check`. Zmiana major PostgreSQL i przyszłe migracje domenowe wymagają własnej procedury; rollback obrazu aplikacji nie cofa schematu bazy.
+Sprawdź tabele Identity i liczbę kont w bazie kontrolnej, później także sumy wydatków. Po udanej kontroli usuń wyłącznie bazę `pennypath_restore_check`. Kopię, zachowany sekret i konfigurację oraz klucze/CA przechowuj zaszyfrowane poza Macem. Zmiana major PostgreSQL wymaga osobnego planu; nie usuwaj istniejącego wolumenu w celu naprawy dostępu.
 
-## 7. Odbiór na docelowym Macu
+## 6. Weryfikacja i odbiór
 
-- Z drugiego urządzenia w LAN otwórz `http://<adres-Maca>:8080` i `/health`.
-- Utwórz PR i potwierdź, że działa tylko GitHub `verify`; po merge sprawdź zgodność `release.env` i `.Config.Image` kontenera z digestem publikacji.
-- Uruchom workflow ręcznie dla `main`, sprawdź rollback po co najmniej dwóch różnych wydaniach oraz odtworzenie kopii.
-- Zrestartuj Maca, zaloguj konto serwera, potwierdź start OrbStack, runnera, obu kontenerów i dostęp LAN. Zanotuj, jak FileVault wpływa na wznowienie. Kontener zatrzymany ręcznie wymaga ponownego uruchomienia.
+```sh
+docker build --platform linux/arm64 -t pennypath:ci .
+bash scripts/test-compose.sh
+```
 
-Test kontenerowy w CI używa osobnego projektu Compose i lokalnego rejestru. Sprawdza ARM64, użytkownika bez roota, statyczny frontend, SPA, API, zdrowie, 404, trwałość danych po odtworzeniu PostgreSQL, aktualizację aplikacji, błędne pobranie obrazu i automatyczny oraz ręczny rollback. Uruchomienie lokalne na hoście ARM64 z Dockerem: `docker build --platform linux/arm64 -t pennypath:ci .`, następnie `bash scripts/test-compose.sh`. Test wymaga wolnych portów 5000 i 18080 i usuwa wyłącznie swoje kontenery oraz wolumen testowy.
+Test wymaga wolnych portów 5000/18080/18443 i podsieci `172.30.91.0/24` (`PROXY_IP=172.30.91.2`). Wykrywa overlap przed tworzeniem zasobów i nigdy nie zmienia istniejących sieci. Używa własnego projektu/bazy/registry, pliku sekretu 0444 w katalogu 0700 i ulotnej sesji 0600. Sprawdza prawdziwy odczyt sekretu przez non-root app/migrator, prywatny katalog kluczy, migrację i idempotencję, HTTPS z root CA bez obejść, A/B, CSRF, to samo ID po restartach/update/rollback, trwałość bazy i CA, failed pull, failed migration oraz rollback po healthchecku. Sprzątanie usuwa tylko własny projekt i registry; artefakty testu zostają w prywatnym katalogu tymczasowym do diagnostyki.
+
+Brak Dockera pozostawia te kontrole oczekujące, również prawa mountów. Lokalna kompilacja lub SQLite nie zastępują wyników PostgreSQL/HTTPS/obrazu. Ręczny odbiór obejmuje ponadto mobile/desktop, klawiaturę i brak prywatnego renderowania przed potwierdzeniem sesji (oczekujące 3.6), dwa urządzenia/konteksty i poprawny trust CA (4.8), zachowaną bazę/sekret, kolejność migracji i trwałe klucze/CA (4.9). Sprawdź też restart Maca po zalogowaniu, start OrbStack/runnera i dostęp HTTPS z LAN.

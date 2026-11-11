@@ -13,6 +13,10 @@
 !frontend/public/
 !frontend/public/**
 !backend/
+!backend/PennyPath.slnx
+!backend/PennyPath.Api.Tests/
+!backend/PennyPath.Api.Tests/*.csproj
+!backend/PennyPath.Api.Tests/*.cs
 !backend/PennyPath.Api/
 !backend/PennyPath.Api/*.csproj
 !backend/PennyPath.Api/*.cs
@@ -23,3 +27,5 @@
 !backend/PennyPath.Api/Data/**
 !backend/PennyPath.Api/Auth/
 !backend/PennyPath.Api/Auth/**
+**/bin/**
+**/obj/**

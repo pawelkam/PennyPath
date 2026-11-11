@@ -29,6 +29,8 @@ if [ "$#" -ne 1 ]; then
     exit 2
 fi
 requested=$1
+rollback=false
+if [ "$requested" = rollback ]; then rollback=true; fi
 if [ "$requested" != rollback ] && ! valid_image "$requested"; then
     echo "Expected an immutable image digest from $repository" >&2
     exit 2
@@ -136,6 +138,11 @@ fi
 # Download before touching the running app; retain the cached current image for rollback.
 docker pull --platform linux/arm64 "$requested"
 if [ -n "$current" ]; then docker image inspect "$current" >/dev/null; fi
+# A failed migration leaves the current app and release.env intact. Rollback only
+# swaps the image: an older image must never try to migrate a newer schema.
+if [ "$rollback" = false ]; then
+    compose run --rm --no-deps --pull never app --migrate
+fi
 changed=true
 compose up -d --no-deps --pull never app
 if ! wait_healthy "$requested"; then

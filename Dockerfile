@@ -3,22 +3,27 @@ WORKDIR /src/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
-RUN npm run build
+RUN npm run test:unit -- --run && npm run build
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0.401 AS backend
 WORKDIR /src
 COPY global.json ./
 COPY backend/PennyPath.Api/PennyPath.Api.csproj backend/PennyPath.Api/
-RUN dotnet restore backend/PennyPath.Api/PennyPath.Api.csproj
+COPY backend/PennyPath.Api.Tests/PennyPath.Api.Tests.csproj backend/PennyPath.Api.Tests/
+COPY backend/PennyPath.slnx backend/
+RUN dotnet restore backend/PennyPath.slnx
 COPY backend/PennyPath.Api/ backend/PennyPath.Api/
+COPY backend/PennyPath.Api.Tests/ backend/PennyPath.Api.Tests/
 COPY --from=frontend /src/frontend/dist/ backend/PennyPath.Api/wwwroot/
-RUN dotnet publish backend/PennyPath.Api/PennyPath.Api.csproj \
+RUN dotnet test backend/PennyPath.slnx -c Release --no-restore \
+    && dotnet publish backend/PennyPath.Api/PennyPath.Api.csproj \
     -c Release --no-restore --self-contained false -p:UseAppHost=false -o /out
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.12 AS runtime
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && install -d -o "$APP_UID" -g "$APP_UID" -m 0700 /var/lib/pennypath/keys
 WORKDIR /app
 COPY --from=backend /out/ ./
 LABEL org.opencontainers.image.source="https://github.com/pawelkam/PennyPath"

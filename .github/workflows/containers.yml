@@ -28,7 +28,7 @@ jobs:
           shellcheck scripts/deploy.sh scripts/test-compose.sh
           python3 scripts/test-deploy.py
       - uses: docker/setup-buildx-action@v3
-      - name: Build and type-check the ARM64 application
+      - name: Build ARM64 image with backend tests, Vue tests and type checking
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -37,7 +37,7 @@ jobs:
           tags: pennypath:ci
           cache-from: type=gha,scope=pennypath-arm64
           cache-to: type=gha,mode=max,scope=pennypath-arm64
-      - name: Test HTTP, database persistence and failed deployments in isolation
+      - name: Test trusted HTTPS, PostgreSQL migrations, sessions and failed deployments in isolation
         run: bash scripts/test-compose.sh
 
   publish:
