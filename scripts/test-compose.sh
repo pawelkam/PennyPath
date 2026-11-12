@@ -252,4 +252,16 @@ done
 resume_session
 compose cp proxy:/data/caddy/pki/authorities/local/root.crt "$ca_cert"
 [ "$(shasum -a 256 "$ca_cert")" = "$ca_before" ]
-echo "ARM64, non-root secrets/keys, PostgreSQL migrations, trusted HTTPS, session persistence and rollback checks passed"
+# IP URLs do not send SNI; Docker exposes a different destination IP inside Caddy.
+# Exercise that path in addition to the localhost hostname checks above.
+export LAN_HOST=127.0.0.1
+compose up -d --no-deps --force-recreate proxy
+ready=false
+for attempt in {1..30}; do
+    if curl --fail --silent --cacert "$ca_cert" https://127.0.0.1:18443/health >/dev/null; then ready=true; break; fi
+    echo "Waiting for trusted HTTPS by IP without SNI ($attempt/30)"
+    sleep 1
+done
+[ "$ready" = true ]
+python3 "$root_dir/scripts/smoke-test.py" https://127.0.0.1:18443 --ca-cert "$ca_cert"
+echo "ARM64, non-root secrets/keys, PostgreSQL migrations, trusted HTTPS by hostname and IP, session persistence and rollback checks passed"

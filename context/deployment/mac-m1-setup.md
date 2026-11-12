@@ -873,6 +873,8 @@ Skopiuj na urządzenia LAN **wyłącznie** `$deploy_dir/pennypath-root.crt`. Por
 
 Na Macu ustaw adres odpowiadający LAN_HOST / HTTPS_PORT z `.env` i uruchom kontrole:
 
+`192.168.1.50` poniżej jest przykładem. Sprawdź rzeczywisty adres aktywnego interfejsu Maca (np. `ipconfig getifaddr en0`) i ustaw ten sam adres w `LAN_HOST` oraz `https_url`. Po zmianie `LAN_HOST` odtwórz proxy zgodnie z końcem tej sekcji.
+
 ```sh
 https_url='https://192.168.1.50:8443'
 curl --fail --cacert "$deploy_dir/pennypath-root.crt" "$https_url/health"
@@ -949,3 +951,25 @@ docker rm "$oneoff_container"
 Ponów 21.4 z aktualnym skryptem i właściwym digestem. `release.env` i nazwane wolumeny pozostają zachowane. Nie inicjalizuj ponownie bazy.
 
 Wyjątek `Configure an existing private DataProtection:KeysPath directory` oznacza brak ustawienia `DataProtection__KeysPath` lub brak wskazanego katalogu dostępnego w danym kontenerze. Kontener utworzony przed synchronizacją Compose zachowuje dawne zmienne i montowania. Nowy migrator musi pochodzić z obrazu HTTPS i używać konfiguracji z 21.3: `DataProtection__KeysPath=/var/lib/pennypath/keys` oraz wolumenu `app_keys` pod tą ścieżką. Jeżeli błąd wystąpi także w nowo utworzonym kontenerze, sprawdź jego konfigurację i montowania; zatrzymaj procedurę przed wymianą app.
+
+### 21.10. Napraw wybór certyfikatu przy dostępie przez IP
+
+Jeśli `curl` dociera do portu HTTPS, ale zgłasza `(35) ... tlsv1 alert internal error`, sprawdź `pp_compose logs --tail 80 proxy`. Gdy Caddy ma właściwy `LAN_HOST` i loguje `certificate obtained successfully` dla tego IP, możliwą przyczyną jest brak SNI w połączeniu klienta. Przy adresie IP klient nie wysyła nazwy serwera w TLS, a Caddy za przekierowaniem portu widzi własny adres kontenera zamiast adresu LAN Maca.
+
+Aktualny `deploy/Caddyfile` zawiera w globalnym bloku:
+
+```caddyfile
+default_sni {$LAN_HOST}
+```
+
+Ta opcja wybiera certyfikat dla LAN_HOST, gdy klient nie wysyła SNI. Zachowuje sprawdzanie CA i zgodności adresu z certyfikatem. Źródło: [Caddy — default_sni](https://caddyserver.com/docs/caddyfile/options#default-sni).
+
+Na serwerze dopisz tę linię wewnątrz istniejącego globalnego bloku `$deploy_dir/deploy/Caddyfile` albo zsynchronizuj poprawiony plik z checkoutu według 21.3. Następnie sprawdź konfigurację i uruchom ponownie samo proxy, wykonując drugą komendę dopiero po sukcesie pierwszej:
+
+```sh
+pp_compose exec -T proxy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+pp_compose restart proxy
+curl --fail --cacert "$deploy_dir/pennypath-root.crt" "$https_url/health"
+```
+
+`restart` wystarcza po zmianie zawartości montowanego Caddyfile. Jeżeli zmieniłeś również LAN_HOST w `.env`, użyj zamiast restartu `pp_compose up -d --no-deps --force-recreate proxy`, ponieważ zmienne istniejącego kontenera wymagają odtworzenia. Nie usuwaj magazynu CA ani nie wyłączaj weryfikacji TLS. Oczekiwany wynik to JSON ze zdrowiem aplikacji; błąd HTTP 502 oznacza już potrzebę sprawdzenia połączenia proxy z app.

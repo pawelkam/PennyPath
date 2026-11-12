@@ -8,6 +8,8 @@ Jeden obraz `linux/arm64` zawiera Vue i ASP.NET Core. Proces app/migratora dzia�
 
 Przeglądarka używa wspólnego originu `https://<LAN_HOST>:8443` (domyślny port). HTTP app jest publikowane tylko na `127.0.0.1:${APP_PORT:-8080}` do kontroli zdrowia. `LAN_HOST` to stały IP lub nazwa osiągalna na urządzeniach, bez protokołu, portu ani ścieżki. `localhost` w szablonie służy wyłącznie lokalnemu uruchomieniu.
 
+Caddy ustawia `default_sni {$LAN_HOST}` dla klientów łączących się po IP bez SNI. Dzięki temu wybiera certyfikat adresu LAN także za przekierowaniem portu Dockera, gdzie adres docelowy wewnątrz kontenera jest inny. Test Compose sprawdza zarówno nazwę localhost, jak i URL z adresem IP przy włączonej weryfikacji CA.
+
 App należy do sieci bazy i osobnej `edge`: `EDGE_SUBNET=172.30.90.0/24`. App i migrator otrzymują adresy z puli `EDGE_IP_RANGE=172.30.90.128/25`; statyczny adres proxy `PROXY_IP=172.30.90.2` jest poza nią. Dzięki temu app uruchomiony przed Caddy nie zajmuje jego IP. Sprawdź istniejące sieci Dockera przed konfiguracją; przy konflikcie dobierz wszystkie trzy ustawienia razem. Pula dynamiczna musi być częścią EDGE_SUBNET i nie może obejmować PROXY_IP. App przetwarza Forwarded-For/Proto wyłącznie od tego dokładnego IP, przed auth i CSRF. Caddy nadpisuje nagłówki otrzymane od klienta.
 
 Zachowuj nazwę projektu `pennypath` i wolumeny:
