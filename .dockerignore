@@ -27,5 +27,7 @@
 !backend/PennyPath.Api/Data/**
 !backend/PennyPath.Api/Auth/
 !backend/PennyPath.Api/Auth/**
+!backend/PennyPath.Api/Spending/
+!backend/PennyPath.Api/Spending/**
 **/bin/**
 **/obj/**

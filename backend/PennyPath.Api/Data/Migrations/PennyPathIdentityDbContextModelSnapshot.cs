@@ -219,6 +219,117 @@ namespace PennyPath.Api.Data.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("PennyPath.Api.Spending.Expense", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(14, 2)
+                        .HasColumnType("numeric(14,2)");
+
+                    b.Property<string>("CategoryId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateOnly>("PurchaseDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime>("RecordedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SubcategoryId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId", "CategoryId", "SubcategoryId");
+
+                    b.HasIndex("OwnerId", "PurchaseDate", "RecordedAtUtc", "Id")
+                        .IsDescending(false, true, true, true);
+
+                    b.ToTable("Expenses", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Expenses_Name", "length(trim(\"Name\")) BETWEEN 1 AND 200 AND \"Name\" = trim(\"Name\")");
+
+                            t.HasCheckConstraint("CK_Expenses_PositiveAmount", "\"Amount\" > 0");
+                        });
+                });
+
+            modelBuilder.Entity("PennyPath.Api.Spending.ExpenseCategory", b =>
+                {
+                    b.Property<string>("OwnerId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CategoryId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("OwnerId", "CategoryId");
+
+                    b.ToTable("ExpenseCategories");
+                });
+
+            modelBuilder.Entity("PennyPath.Api.Spending.ExpenseSubcategory", b =>
+                {
+                    b.Property<string>("OwnerId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CategoryId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SubcategoryId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.HasKey("OwnerId", "CategoryId", "SubcategoryId");
+
+                    b.ToTable("ExpenseSubcategories");
+                });
+
+            modelBuilder.Entity("PennyPath.Api.Spending.SpendingProfile", b =>
+                {
+                    b.Property<string>("OwnerId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("OwnerId");
+
+                    b.ToTable("SpendingProfiles");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
@@ -267,6 +378,53 @@ namespace PennyPath.Api.Data.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PennyPath.Api.Spending.Expense", b =>
+                {
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PennyPath.Api.Spending.ExpenseCategory", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId", "CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("PennyPath.Api.Spending.ExpenseSubcategory", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId", "CategoryId", "SubcategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("PennyPath.Api.Spending.ExpenseCategory", b =>
+                {
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PennyPath.Api.Spending.ExpenseSubcategory", b =>
+                {
+                    b.HasOne("PennyPath.Api.Spending.ExpenseCategory", null)
+                        .WithMany()
+                        .HasForeignKey("OwnerId", "CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("PennyPath.Api.Spending.SpendingProfile", b =>
+                {
+                    b.HasOne("Microsoft.AspNetCore.Identity.IdentityUser", null)
+                        .WithOne()
+                        .HasForeignKey("PennyPath.Api.Spending.SpendingProfile", "OwnerId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 #pragma warning restore 612, 618
