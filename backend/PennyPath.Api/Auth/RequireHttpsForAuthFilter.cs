@@ -16,6 +16,7 @@ public sealed class RequireHttpsForAuthFilter : IAsyncAuthorizationFilter, IOrde
 
     public async Task OnAuthorizationAsync(AuthorizationFilterContext context)
     {
+        context.HttpContext.Response.Headers.CacheControl = "no-store";
         if (!context.HttpContext.Request.IsHttps)
         {
             context.Result = AuthProblems.Result(400, "https_required", "HTTPS is required.");

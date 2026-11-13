@@ -50,6 +50,48 @@ GET {{PennyPath.Api_HostAddress}}/api/auth/csrf
 
 ###
 
+# No profile is created by GET; the initial timeZoneId is null.
+GET {{PennyPath.Api_HostAddress}}/api/spending/settings
+
+###
+
+GET {{PennyPath.Api_HostAddress}}/api/spending/time-zones
+
+###
+
+# Explicit account choice. Repeating this changes only the time zone.
+POST {{PennyPath.Api_HostAddress}}/api/spending/settings
+Content-Type: application/json
+X-CSRF-TOKEN: {{authenticatedCsrf.response.body.$.requestToken}}
+
+{"timeZoneId":"Europe/Warsaw"}
+
+###
+
+GET {{PennyPath.Api_HostAddress}}/api/expense-categories
+
+###
+
+# The API truncates extra fraction digits before saving: 12.349 becomes 12.34.
+# The purchase date is literal; past and future dates are allowed.
+POST {{PennyPath.Api_HostAddress}}/api/expenses
+Content-Type: application/json
+X-CSRF-TOKEN: {{authenticatedCsrf.response.body.$.requestToken}}
+
+{"name":"Zakupy","amount":"12.349","purchaseDate":"2026-11-15","categoryId":"food","subcategoryId":null}
+
+###
+
+# Default register and summary both cover the account's current calendar month.
+GET {{PennyPath.Api_HostAddress}}/api/spending/overview
+
+###
+
+# History changes the register only. The summary remains for the current month.
+GET {{PennyPath.Api_HostAddress}}/api/spending/overview?scope=all&page=1&pageSize=50
+
+###
+
 POST {{PennyPath.Api_HostAddress}}/api/auth/logout
 X-CSRF-TOKEN: {{authenticatedCsrf.response.body.$.requestToken}}
 

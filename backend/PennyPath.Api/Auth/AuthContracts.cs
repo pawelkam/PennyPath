@@ -23,6 +23,31 @@ public sealed record CsrfResponse(string RequestToken);
 
 public static class AuthProblems
 {
+    public static string Field(string key) => key.Split('.').Last().ToLowerInvariant() switch
+    {
+        "email" => "email",
+        "password" => "password",
+        "name" => "name",
+        "amount" => "amount",
+        "purchasedate" => "purchaseDate",
+        "categoryid" => "categoryId",
+        "subcategoryid" => "subcategoryId",
+        "timezoneid" => "timeZoneId",
+        "scope" => "scope",
+        "page" => "page",
+        "pagesize" => "pageSize",
+        _ => "body"
+    };
+
+    public static ObjectResult Validation(Dictionary<string, string[]> errors) =>
+        Result(400, "validation_failed", "Check the submitted fields.", errors);
+
+    public static ObjectResult SettingsRequired() =>
+        Result(409, "settings_required", "Choose the account time zone first.");
+
+    public static ObjectResult Unauthorized() =>
+        Result(401, "unauthorized", "Authentication is required.");
+
     public static ProblemDetails Details(int status, string code, string title,
         Dictionary<string, string[]>? errors = null)
     {

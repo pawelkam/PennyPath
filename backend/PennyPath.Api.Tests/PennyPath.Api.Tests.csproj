@@ -21,4 +21,9 @@
     <ProjectReference Include="../PennyPath.Api/PennyPath.Api.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="../../tests/fixtures/spending-reconciliation/cases.json"
+          Link="Fixtures/spending-reconciliation/cases.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

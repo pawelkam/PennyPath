@@ -7,4 +7,6 @@ public sealed class TestTimeProvider : TimeProvider
     public override DateTimeOffset GetUtcNow() => new(Interlocked.Read(ref utcTicks), TimeSpan.Zero);
 
     public void Advance(TimeSpan interval) => Interlocked.Add(ref utcTicks, interval.Ticks);
+
+    public void SetUtcNow(DateTimeOffset instant) => Interlocked.Exchange(ref utcTicks, instant.UtcTicks);
 }

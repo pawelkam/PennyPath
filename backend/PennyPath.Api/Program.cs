@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using PennyPath.Api.Auth;
 using PennyPath.Api.Data;
+using PennyPath.Api.Spending;
 
 var migrate = args.Contains("--migrate", StringComparer.Ordinal);
 var builder = WebApplication.CreateBuilder(args.Where(arg => arg != "--migrate").ToArray());
@@ -23,6 +24,8 @@ builder.Services.AddIdentityCore<IdentityUser>(options => options.User.RequireUn
     .AddEntityFrameworkStores<PennyPathIdentityDbContext>()
     .AddSignInManager();
 builder.Services.AddPrivateAccountAccess();
+builder.Services.AddScoped<SpendingSettingsService>();
+builder.Services.AddScoped<SpendingReadService>();
 builder.Services.AddLanHosting(builder.Configuration, builder.Environment);
 
 if (migrate)

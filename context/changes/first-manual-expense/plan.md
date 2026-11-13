@@ -405,27 +405,27 @@ Każda faza musi dawać pakowalny obraz. Faza 1 dodaje schemat bez aktywowania f
 
 #### Automated
 
-- [x] 1.1 Rozwiązanie kompiluje się: `dotnet build backend/PennyPath.slnx`.
-- [x] 1.2 Testy trwałości danych wydatków przechodzą: `dotnet test backend/PennyPath.slnx --filter Category=SpendingPersistence`.
-- [x] 1.3 Powstaje idempotentny SQL do przeglądu: `dotnet tool run dotnet-ef migrations script --idempotent --project backend/PennyPath.Api --output artifacts/first-manual-expense.sql` po utworzeniu artifacts i przywróceniu narzędzia EF.
-- [x] 1.4 Zmiany nie zawierają błędów whitespace: `git diff --check`.
+- [x] 1.1 Rozwiązanie kompiluje się: `dotnet build backend/PennyPath.slnx`. — 30ce9e1
+- [x] 1.2 Testy trwałości danych wydatków przechodzą: `dotnet test backend/PennyPath.slnx --filter Category=SpendingPersistence`. — 30ce9e1
+- [x] 1.3 Powstaje idempotentny SQL do przeglądu: `dotnet tool run dotnet-ef migrations script --idempotent --project backend/PennyPath.Api --output artifacts/first-manual-expense.sql` po utworzeniu artifacts i przywróceniu narzędzia EF. — 30ce9e1
+- [x] 1.4 Zmiany nie zawierają błędów whitespace: `git diff --check`. — 30ce9e1
 
 #### Manual
 
-- [x] 1.5 Użytkownik potwierdził addytywną migrację, zachowanie kont i brak automatycznie zgadywanej strefy.
+- [x] 1.5 Użytkownik potwierdził addytywną migrację, zachowanie kont i brak automatycznie zgadywanej strefy. — 30ce9e1
 
 ### Phase 2: API i zgodność podsumowań
 
 #### Automated
 
-- [ ] 2.1 Kontrola referencyjna i jej testy nadal przechodzą: `python3 scripts/check-spending-reconciliation.py` oraz `python3 scripts/test-spending-reconciliation.py -v`.
-- [ ] 2.2 Testy API, reguł i sześciu przypadków przez zapis/agregację przechodzą: `dotnet test backend/PennyPath.slnx --filter Category=Spending`.
-- [ ] 2.3 Cały zestaw backendu przechodzi: `dotnet test backend/PennyPath.slnx`.
-- [ ] 2.4 Zmiany nie zawierają błędów whitespace: `git diff --check`.
+- [x] 2.1 Kontrola referencyjna i jej testy nadal przechodzą: `python3 scripts/check-spending-reconciliation.py` oraz `python3 scripts/test-spending-reconciliation.py -v`.
+- [x] 2.2 Testy API, reguł i sześciu przypadków przez zapis/agregację przechodzą: `dotnet test backend/PennyPath.slnx --filter Category=Spending`.
+- [x] 2.3 Cały zestaw backendu przechodzi: `dotnet test backend/PennyPath.slnx`.
+- [x] 2.4 Zmiany nie zawierają błędów whitespace: `git diff --check`.
 
 #### Manual
 
-- [ ] 2.5 Użytkownik potwierdził kontrakt strefy konta, obcięcia 12.349 do 12.34, opcjonalnej podkategorii oraz przyszłych wydatków liczonych w miesiącu zakupu.
+- [x] 2.5 Użytkownik potwierdził kontrakt strefy konta, obcięcia 12.349 do 12.34, opcjonalnej podkategorii oraz przyszłych wydatków liczonych w miesiącu zakupu.
 
 ### Phase 3: Przepływ w Vue
 

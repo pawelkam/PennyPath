@@ -127,8 +127,7 @@ public static class AuthConfiguration
         services.Configure<ApiBehaviorOptions>(options => options.InvalidModelStateResponseFactory = context =>
         {
             var errors = context.ModelState.Where(entry => entry.Value?.Errors.Count > 0)
-                .Select(entry => entry.Key.Split('.').Last().ToLowerInvariant())
-                .Select(key => key is "email" or "password" ? key : "body")
+                .Select(entry => AuthProblems.Field(entry.Key))
                 .Distinct().ToDictionary(key => key, _ => new[] { "invalid" });
             return AuthProblems.Result(400, "validation_failed", "Check the submitted fields.", errors);
         });

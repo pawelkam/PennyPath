@@ -14,6 +14,7 @@ COPY backend/PennyPath.slnx backend/
 RUN dotnet restore backend/PennyPath.slnx
 COPY backend/PennyPath.Api/ backend/PennyPath.Api/
 COPY backend/PennyPath.Api.Tests/ backend/PennyPath.Api.Tests/
+COPY tests/fixtures/spending-reconciliation/cases.json tests/fixtures/spending-reconciliation/
 COPY --from=frontend /src/frontend/dist/ backend/PennyPath.Api/wwwroot/
 RUN dotnet test backend/PennyPath.slnx -c Release --no-restore \
     && dotnet publish backend/PennyPath.Api/PennyPath.Api.csproj \

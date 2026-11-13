@@ -3,7 +3,7 @@ change_id: first-manual-expense
 title: First manual expense
 status: implementing
 created: 2026-11-12
-updated: 2026-11-12
+updated: 2026-11-13
 archived_at: null
 ---
 

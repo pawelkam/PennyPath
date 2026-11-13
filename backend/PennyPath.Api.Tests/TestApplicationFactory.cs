@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
@@ -17,11 +19,13 @@ public sealed class TestApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly DirectoryInfo directory = Directory.CreateTempSubdirectory("pennypath-auth-");
     private readonly bool synchronizeRegistrations;
+    private readonly bool synchronizeSpendingSettings;
     public TestTimeProvider Clock { get; } = new();
 
-    public TestApplicationFactory(bool synchronizeRegistrations = false)
+    public TestApplicationFactory(bool synchronizeRegistrations = false, bool synchronizeSpendingSettings = false)
     {
         this.synchronizeRegistrations = synchronizeRegistrations;
+        this.synchronizeSpendingSettings = synchronizeSpendingSettings;
     }
 
     private string DatabaseFile => Path.Combine(directory.FullName, "identity.db");
@@ -43,6 +47,11 @@ public sealed class TestApplicationFactory : WebApplicationFactory<Program>
             {
                 services.AddSingleton<IUserValidator<IdentityUser>, RegistrationBarrier>();
             }
+            if (synchronizeSpendingSettings)
+            {
+                var barrier = new SpendingSettingsBarrier();
+                services.Configure<MvcOptions>(options => options.Filters.Add(barrier));
+            }
         });
     }
 
@@ -59,6 +68,9 @@ public sealed class TestApplicationFactory : WebApplicationFactory<Program>
         AllowAutoRedirect = false,
         HandleCookies = handleCookies
     });
+
+    public HttpClient CreateClockBrowser() =>
+        CreateDefaultClient(new Uri("https://localhost"), new ClockCookieHandler(Clock));
 
     public void RemoveDatabase() => File.Delete(DatabaseFile);
 
@@ -82,6 +94,24 @@ public sealed class TestApplicationFactory : WebApplicationFactory<Program>
 
             await ready.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
             return IdentityResult.Success;
+        }
+    }
+
+    private sealed class SpendingSettingsBarrier : IAsyncActionFilter
+    {
+        private readonly TaskCompletionSource ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int arrivals;
+
+        public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
+        {
+            if (context.HttpContext.Request.Path == "/api/spending/settings" &&
+                context.HttpContext.Request.Method == "POST")
+            {
+                if (Interlocked.Increment(ref arrivals) >= 2) ready.TrySetResult();
+                await ready.Task.WaitAsync(TimeSpan.FromSeconds(10), context.HttpContext.RequestAborted);
+            }
+
+            await next();
         }
     }
 }

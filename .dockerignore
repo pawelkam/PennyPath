@@ -29,5 +29,9 @@
 !backend/PennyPath.Api/Auth/**
 !backend/PennyPath.Api/Spending/
 !backend/PennyPath.Api/Spending/**
+!tests/
+!tests/fixtures/
+!tests/fixtures/spending-reconciliation/
+!tests/fixtures/spending-reconciliation/cases.json
 **/bin/**
 **/obj/**
